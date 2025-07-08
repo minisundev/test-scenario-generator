@@ -32,3 +32,5 @@ dist-ssr
 *.sw?proxy-server/.env
 .env
 proxy-server/.env
+*.sw?
+
