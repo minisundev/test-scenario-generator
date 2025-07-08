@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="AI 기반 테스트 시나리오 자동생성기 - Azure OpenAI와 RAG 기술을 활용한 보안 규칙 반영 테스트 케이스 생성 도구" />
+    <meta name="keywords" content="테스트 시나리오, AI, 자동생성, Azure OpenAI, RAG, 보안, 테스트 케이스" />
+    <meta name="author" content="Test Scenario Generator Team" />
+    
+    <!-- Open Graph Meta Tags -->
+    <meta property="og:title" content="테스트 시나리오 자동생성기" />
+    <meta property="og:description" content="AI 기반 테스트 시나리오 자동생성기" />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="/og-image.png" />
+    
+    <!-- Twitter Card Meta Tags -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="테스트 시나리오 자동생성기" />
+    <meta name="twitter:description" content="AI 기반 테스트 시나리오 자동생성기" />
+    <meta name="twitter:image" content="/twitter-image.png" />
+    
+    <!-- Preconnect to improve performance -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    
+    <!-- Favicon -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+    
+    <title>테스트 시나리오 자동생성기</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    
+    <!-- 접근성을 위한 스크린리더 지원 -->
+    <script>
+      // 포커스 관리를 위한 기본 스크립트
+      document.addEventListener('DOMContentLoaded', function() {
+        // 키보드 네비게이션 개선
+        document.addEventListener('keydown', function(e) {
+          if (e.key === 'Tab') {
+            document.body.classList.add('keyboard-navigation');
+          }
+        });
+        
+        document.addEventListener('mousedown', function() {
+          document.body.classList.remove('keyboard-navigation');
+        });
+      });
+    </script>
+    
+    <!-- 에러 경계를 위한 전역 에러 핸들러 -->
+    <script>
+      window.addEventListener('error', function(e) {
+        console.error('Global error:', e.error);
+        // 프로덕션에서는 에러 리포팅 서비스로 전송
+      });
+      
+      window.addEventListener('unhandledrejection', function(e) {
+        console.error('Unhandled promise rejection:', e.reason);
+        // 프로덕션에서는 에러 리포팅 서비스로 전송
+      });
+    </script>
+  </body>
+</html>
