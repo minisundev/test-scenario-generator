@@ -29,4 +29,4 @@ dist-ssr
 *.ntvs*
 *.njsproj
 *.sln
-*.sw?
+*.sw?proxy-server/.env
