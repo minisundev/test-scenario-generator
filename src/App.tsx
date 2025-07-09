@@ -63,16 +63,19 @@ const App: React.FC = () => {
 
   // 프록시 서버 상태 확인
   const checkApiStatus = async () => {
-  try {
-    console.log('🔍 프록시 서버 상태 확인 중...');
-    
-    // 임시: 항상 전체 URL 사용
-    const healthUrl = 'https://dopaminesun-server-dycxgacfcmbcc2ec.eastus2-01.azurewebsites.net/api/health';
-    
-    console.log('헬스 체크 URL:', healthUrl);
-    
-    const response = await fetch(healthUrl);
+    try {
+      console.log('🔍 프록시 서버 상태 확인 중...');
       
+      // 개발/배포 환경 구분
+      const isDev = import.meta.env.DEV;
+      
+      // 임시: 항상 전체 URL 사용
+      const healthUrl = 'https://dopaminesun-server-dycxgacfcmbcc2ec.eastus2-01.azurewebsites.net/api/health';
+      
+      console.log('헬스 체크 URL:', healthUrl);
+      
+      const response = await fetch(healthUrl);
+        
       if (response.ok) {
         const data = await response.json();
         console.log('✅ 프록시 서버 응답:', data);
@@ -642,7 +645,6 @@ ${customPrompt}
 
         {/* 메인 컨텐츠 */}
         <div className="bg-white rounded-lg shadow-sm p-6 lg:p-8">
-          {/* 나머지 단계들은 동일하게 유지... */}
           {/* 1단계: 보안 문서 업로드 */}
           {currentStep === 1 && (
             <div className="space-y-6">
