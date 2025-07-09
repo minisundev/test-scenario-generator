@@ -9,12 +9,11 @@ class AzureAISearchService {
 
   // 환경별 프록시 URL 결정
   private getProxyUrl(): string {
-    // 개발 환경: localhost:3001 프록시 서버
-    // 배포 환경: 환경변수에서 Backend URL 가져오기
     if (import.meta.env.DEV) {
       return 'http://localhost:3001';
     } else {
-      return import.meta.env.VITE_API_BASE_URL || '';
+      // 배포 환경에서는 VITE_PROXY_URL 환경변수 사용
+      return import.meta.env.VITE_PROXY_URL || 'https://dopaminesun-server-dycxgacfcmbcc2ec.eastus2-01.azurewebsites.net';
     }
   }
 
@@ -23,6 +22,7 @@ class AzureAISearchService {
     const proxyUrl = this.getProxyUrl();
     const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
     
+    // 항상 전체 URL 생성
     return `${proxyUrl}${normalizedEndpoint}`;
   }
 

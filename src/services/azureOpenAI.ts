@@ -16,7 +16,8 @@ class AzureOpenAIService {
     if (import.meta.env.DEV) {
       return 'http://localhost:3001';
     } else {
-      return '';
+      // 배포 환경에서는 VITE_PROXY_URL 환경변수 사용
+      return import.meta.env.VITE_PROXY_URL || 'https://dopaminesun-server-dycxgacfcmbcc2ec.eastus2-01.azurewebsites.net';
     }
   }
 
@@ -25,11 +26,8 @@ class AzureOpenAIService {
     const proxyUrl = this.getProxyUrl();
     const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
     
-    if (proxyUrl) {
-      return `${proxyUrl}${normalizedEndpoint}`;
-    } else {
-      return normalizedEndpoint;
-    }
+    // 항상 전체 URL 생성
+    return `${proxyUrl}${normalizedEndpoint}`;
   }
 
   // 설정 검증 (프록시 연결 테스트)
