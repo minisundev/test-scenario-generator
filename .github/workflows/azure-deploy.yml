@@ -3,6 +3,8 @@ name: Deploy to Azure Web App
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 env:
   AZURE_WEBAPP_NAME: dopaminesun-web-app
@@ -16,6 +18,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Docker Compose
+        run: |
+          sudo curl -L "https://github.com/docker/compose/releases/download/v2.26.1/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
+          docker-compose version
+
       - name: Log in to Azure
         uses: azure/login@v1
         with:
@@ -28,23 +36,19 @@ jobs:
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
 
-      - name: Build Docker images via Docker Compose
+      - name: Build Docker images
         run: |
           docker-compose -f docker-compose.yml build
 
-      - name: Tag and push frontend
+      - name: Tag and push images to ACR
         run: |
-          docker tag your-app_frontend:latest ${{ env.REGISTRY_LOGIN_SERVER }}/frontend:latest
+          docker tag test-scenario-generator_frontend:latest ${{ env.REGISTRY_LOGIN_SERVER }}/frontend:latest
+          docker tag test-scenario-generator_proxy-server:latest ${{ env.REGISTRY_LOGIN_SERVER }}/proxy-server:latest
           docker push ${{ env.REGISTRY_LOGIN_SERVER }}/frontend:latest
-
-      - name: Tag and push proxy-server
-        run: |
-          docker tag your-app_proxy-server:latest ${{ env.REGISTRY_LOGIN_SERVER }}/proxy-server:latest
           docker push ${{ env.REGISTRY_LOGIN_SERVER }}/proxy-server:latest
 
-      - name: Deploy to Azure Web App
+      - name: Deploy frontend to Azure Web App
         uses: azure/webapps-deploy@v2
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
-          images: |
-            ${{ env.REGISTRY_LOGIN_SERVER }}/frontend:latest
+          images: ${{ env.REGISTRY_LOGIN_SERVER }}/frontend:latest
