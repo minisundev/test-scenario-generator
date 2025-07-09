@@ -3,22 +3,19 @@
 echo "=== 디버깅 시작 ==="
 echo "PORT: $PORT"
 echo "NODE_ENV: $NODE_ENV"
-echo "현재 디렉토리: $(pwd)"
 
 # 빌드
 echo "=== 빌드 시작 ==="
 npm run build
 echo "=== 빌드 완료 ==="
 
-echo "=== 프록시 서버 시작 준비 ==="
-cd proxy-server || { echo "proxy-server 디렉토리를 찾을 수 없습니다"; exit 1; }
+# 정적 파일 서빙을 위한 설정
+echo "=== 프록시 서버 시작 ==="
+cd proxy-server
 
-echo "현재 위치: $(pwd)"
-echo "파일 목록:"
-ls -la
+# 환경변수 출력해서 확인
+echo "=== 환경변수 확인 ==="
+echo "VITE_AZURE_OPENAI_API_KEY: ${VITE_AZURE_OPENAI_API_KEY:0:10}..."
+echo "VITE_AZURE_SEARCH_API_KEY: ${VITE_AZURE_SEARCH_API_KEY:0:10}..."
 
-echo "=== package.json 확인 ==="
-cat package.json
-
-echo "=== 프록시 서버 시작 시도 ==="
 node proxy-server.js
