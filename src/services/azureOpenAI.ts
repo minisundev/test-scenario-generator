@@ -1,4 +1,5 @@
 import type { EmbeddingResponse, ChatCompletionResponse, CodeAnalysisResult, Template, SecurityRule, TestScenario } from '../types/index.ts';
+import { azureAISearchService } from './azureAISearch.ts';
 
 class AzureOpenAIService {
   public apiKey: string;
@@ -11,7 +12,6 @@ class AzureOpenAIService {
     this.apiKey = import.meta.env.VITE_AZURE_OPENAI_API_KEY || '';
     this.endpoint = import.meta.env.VITE_AZURE_OPENAI_ENDPOINT || '';
     this.apiVersion = import.meta.env.VITE_AZURE_OPENAI_API_VERSION || '2024-02-15-preview';
-    // 실제로는 chat completion 모델이 필요합니다. text-embedding은 embedding 전용입니다.
     this.gptModel = import.meta.env.VITE_CHAT_MODEL_NAME || import.meta.env.VITE_GPT_MODEL_NAME || 'gpt-4o-mini';
     this.embeddingModel = import.meta.env.VITE_EMBEDDING_MODEL_NAME || 'text-embedding-ada-002';
   }
@@ -23,7 +23,6 @@ class AzureOpenAIService {
 
   // 텍스트 임베딩 생성
   public async generateEmbedding(text: string): Promise<number[]> {
-    // endpoint 끝의 슬래시 제거
     const cleanEndpoint = this.endpoint.replace(/\/$/, '');
     const url = `${cleanEndpoint}/openai/deployments/${this.embeddingModel}/embeddings?api-version=${this.apiVersion}`;
     
@@ -51,18 +50,12 @@ class AzureOpenAIService {
     return data.data[0].embedding;
   }
 
-  // JSON 응답 정리 함수 (public으로 변경)
+  // JSON 응답 정리 함수
   public cleanJsonResponse(response: string): string {
-    // 이스케이프된 개행 문자 등을 실제 문자로 변환
     let cleaned = response.replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\t/g, '\t');
-    
-    // 마크다운 코드 블록 제거
     cleaned = cleaned.replace(/```json\s*/g, '').replace(/```\s*/g, '');
-    
-    // 앞뒤 공백 제거
     cleaned = cleaned.trim();
     
-    // 가끔 응답에 추가 텍스트가 있을 수 있으므로 첫 번째 { 또는 [부터 마지막 } 또는 ]까지만 추출
     const jsonStart = Math.min(
       cleaned.indexOf('{') !== -1 ? cleaned.indexOf('{') : Infinity,
       cleaned.indexOf('[') !== -1 ? cleaned.indexOf('[') : Infinity
@@ -95,7 +88,7 @@ class AzureOpenAIService {
 
     const combinedCode = codeContents.join('\n\n');
     
-    // 토큰 제한을 위해 청크로 나누기 (대략 6000자 = 1500토큰)
+    // 토큰 제한을 위해 청크로 나누기
     const maxChunkSize = 6000;
     const chunks = this.splitIntoChunks(combinedCode, maxChunkSize);
     
@@ -137,7 +130,6 @@ ${chunks[i]}
       } catch (error) {
         console.error(`청크 ${i + 1} 분석 오류:`, error);
         
-        // 오류 시 기본값 추가
         allResults.push({
           keywords: [],
           uiElements: [],
@@ -149,8 +141,191 @@ ${chunks[i]}
       }
     }
     
-    // 모든 청크 결과를 병합
     return this.mergeAnalysisResults(allResults);
+  }
+
+  // 코드 분석 기반 보안 규칙 검색 (새로 추가)
+  public async searchSecurityRules(codeAnalysis: CodeAnalysisResult): Promise<SecurityRule[]> {
+    console.log('🔍 코드 분석 결과 기반 보안 규칙 검색 시작...');
+    
+    try {
+      // 1. 검색 쿼리 생성 (키워드 + 보안 우려사항)
+      const searchKeywords = [
+        ...codeAnalysis.keywords,
+        ...codeAnalysis.securityConcerns,
+        ...codeAnalysis.backendApis.map(api => api.replace(/[{}]/g, '')), // API 경로에서 {} 제거
+        '인증', '권한', '보안', '검증', '접근제어' // 추가 보안 관련 키워드
+      ].filter(keyword => keyword.length > 1); // 너무 짧은 키워드 제외
+
+      console.log('검색 키워드:', searchKeywords);
+
+      // 2. 임베딩 생성을 위한 텍스트 구성
+      const queryText = [
+        '보안 테스트 시나리오 생성을 위한 규칙',
+        ...codeAnalysis.securityConcerns,
+        ...searchKeywords.slice(0, 10) // 상위 10개 키워드만
+      ].join(' ');
+
+      console.log('임베딩 생성을 위한 쿼리 텍스트:', queryText);
+
+      // 3. 임베딩 생성
+      const queryVector = await this.generateEmbedding(queryText);
+      console.log('임베딩 생성 완료, 차원:', queryVector.length);
+
+      // 4. 하이브리드 검색 수행
+      const searchResults = await azureAISearchService.searchForCodeAnalysis(
+        searchKeywords,
+        queryVector
+      );
+
+      console.log(`🎯 검색 완료: ${searchResults.length}개의 보안 규칙 발견`);
+      
+      return searchResults;
+
+    } catch (error) {
+      console.error('보안 규칙 검색 오류:', error);
+      return [];
+    }
+  }
+
+  // 새로운 통합 테스트 시나리오 생성 메서드
+  public async generateTestScenariosWithRAG(
+    template: Template,
+    codeAnalysis: CodeAnalysisResult
+  ): Promise<{ scenarios: TestScenario[], securityRules: SecurityRule[] }> {
+    console.log('🚀 RAG 기반 테스트 시나리오 생성 시작...');
+
+    // 1. 보안 규칙 검색
+    const securityRules = await this.searchSecurityRules(codeAnalysis);
+    
+    if (securityRules.length === 0) {
+      console.warn('⚠️ 관련 보안 규칙을 찾지 못했습니다. 기본 시나리오를 생성합니다.');
+      return {
+        scenarios: this.generateDefaultScenarios(template),
+        securityRules: []
+      };
+    }
+
+    // 2. 테스트 시나리오 생성
+    const scenarios = await this.generateTestScenarios(template, codeAnalysis, securityRules);
+
+    return {
+      scenarios,
+      securityRules
+    };
+  }
+
+  // 기존 테스트 시나리오 생성 메서드 (보안 규칙 적용)
+  public async generateTestScenarios(
+    template: Template,
+    codeAnalysis: CodeAnalysisResult,
+    securityRules: SecurityRule[]
+  ): Promise<TestScenario[]> {
+    console.log('📝 테스트 시나리오 생성 중...');
+    
+    const prompt = `
+다음 정보를 바탕으로 실무에서 사용 가능한 테스트 시나리오를 생성해주세요.
+
+## 템플릿 구조:
+${template.columns.map(col => `- ${col.name}: ${col.description} (예: ${col.example})`).join('\n')}
+
+## 코드 분석 결과:
+- 보안 키워드: ${codeAnalysis.keywords.join(', ')}
+- UI 요소: ${codeAnalysis.uiElements.join(', ')}
+- API 엔드포인트: ${codeAnalysis.backendApis.join(', ')}
+- 보안 우려사항: ${codeAnalysis.securityConcerns.join(', ')}
+- 주요 함수: ${codeAnalysis.functions.join(', ')}
+- 컴포넌트: ${codeAnalysis.components.join(', ')}
+
+## 적용할 보안 규칙 (RAG 검색 결과):
+${securityRules.map(rule => `### ${rule.title}
+카테고리: ${rule.category}
+내용: ${rule.content.substring(0, 500)}...
+`).join('\n')}
+
+다음 요구사항을 만족하는 최소 5-7개의 테스트 시나리오를 생성하세요:
+1. 위에서 검색된 보안 규칙들을 실제로 적용한 시나리오
+2. 코드 분석에서 발견된 API와 함수들을 활용한 시나리오
+3. 실무에서 실제로 테스트할 수 있는 구체적인 내용
+
+반드시 다음과 같은 유효한 JSON 배열 형태로만 응답해주세요:
+
+[
+  {
+    "${template.columns[0]?.name || 'ID'}": "TC001",
+    "${template.columns[1]?.name || 'Scenario'}": "구체적인 테스트 시나리오 내용",
+    "${template.columns[2]?.name || 'Security'}": "적용된 보안 규칙명",
+    "${template.columns[3]?.name || 'Expected'}": "예상 결과",
+    "${template.columns[4]?.name || 'Precondition'}": "테스트 사전 조건",
+    "${template.columns[5]?.name || 'Steps'}": "테스트 단계"
+  }
+]
+`;
+
+    try {
+      const response = await this.chatCompletion(prompt);
+      console.log('시나리오 생성 원본 응답:', response);
+      
+      const cleanedResponse = this.cleanJsonResponse(response);
+      console.log('시나리오 생성 정리된 응답:', cleanedResponse);
+      
+      const scenarios = JSON.parse(cleanedResponse);
+      
+      if (!Array.isArray(scenarios)) {
+        throw new Error('응답이 배열이 아닙니다');
+      }
+      
+      console.log(`✅ ${scenarios.length}개의 테스트 시나리오 생성 완료`);
+      return scenarios;
+      
+    } catch (error) {
+      console.error('시나리오 생성 결과 파싱 오류:', error);
+      
+      // 기본 시나리오 반환
+      return this.generateDefaultScenarios(template);
+    }
+  }
+
+  // GPT-4 채팅 완성 호출
+  public async chatCompletion(prompt: string): Promise<string> {
+    const cleanEndpoint = this.endpoint.replace(/\/$/, '');
+    const url = `${cleanEndpoint}/openai/deployments/${this.gptModel}/chat/completions?api-version=${this.apiVersion}`;
+    
+    console.log('Chat Completion URL:', url);
+    console.log('Chat Completion Model:', this.gptModel);
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': this.apiKey,
+      },
+      body: JSON.stringify({
+        messages: [
+          {
+            role: 'system',
+            content: '당신은 소프트웨어 테스트 전문가입니다. 보안 규칙을 반영한 정확하고 실용적인 테스트 시나리오를 생성하는 것이 전문입니다. 항상 유효한 JSON 형태로만 응답하세요.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        max_tokens: 2000,
+        temperature: 0.3,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Chat Completion API Error:', response.status, errorText);
+      throw new Error(`GPT-4 호출 실패: ${response.status} ${response.statusText}\nDetails: ${errorText}`);
+    }
+
+    const data: ChatCompletionResponse = await response.json();
+    console.log('Chat Completion Response:', data);
+    
+    return data.choices[0].message.content;
   }
 
   // 텍스트를 청크로 나누기
@@ -207,108 +382,6 @@ ${chunks[i]}
     return merged;
   }
 
-  // 테스트 시나리오 생성
-  public async generateTestScenarios(
-    template: Template,
-    codeAnalysis: CodeAnalysisResult,
-    securityRules: SecurityRule[]
-  ): Promise<TestScenario[]> {
-    const prompt = `
-다음 정보를 바탕으로 테스트 시나리오를 생성해주세요.
-
-## 템플릿 구조:
-${template.columns.map(col => `- ${col.name}: ${col.description} (예: ${col.example})`).join('\n')}
-
-## 코드 분석 결과:
-- 보안 키워드: ${codeAnalysis.keywords.join(', ')}
-- UI 요소: ${codeAnalysis.uiElements.join(', ')}
-- API 엔드포인트: ${codeAnalysis.backendApis.join(', ')}
-- 보안 우려사항: ${codeAnalysis.securityConcerns.join(', ')}
-- 주요 함수: ${codeAnalysis.functions.join(', ')}
-- 컴포넌트: ${codeAnalysis.components.join(', ')}
-
-## 적용할 보안 규칙:
-${securityRules.map(rule => `- ${rule.title}: ${rule.content}`).join('\n')}
-
-최소 5개 이상의 테스트 시나리오를 생성하고, 반드시 다음과 같은 유효한 JSON 배열 형태로만 응답해주세요. 다른 설명이나 텍스트는 포함하지 마세요:
-
-[
-  {
-    "${template.columns[0]?.name || 'ID'}": "TC001",
-    "${template.columns[1]?.name || 'Scenario'}": "테스트 시나리오 내용",
-    "${template.columns[2]?.name || 'Security'}": "적용된 보안 규칙",
-    "${template.columns[3]?.name || 'Expected'}": "예상 결과"
-  }
-]
-`;
-
-    const response = await this.chatCompletion(prompt);
-    console.log('시나리오 생성 원본 응답:', response);
-    
-    try {
-      const cleanedResponse = this.cleanJsonResponse(response);
-      console.log('시나리오 생성 정리된 응답:', cleanedResponse);
-      
-      const scenarios = JSON.parse(cleanedResponse);
-      
-      // 배열인지 확인
-      if (!Array.isArray(scenarios)) {
-        throw new Error('응답이 배열이 아닙니다');
-      }
-      
-      return scenarios;
-    } catch (error) {
-      console.error('시나리오 생성 결과 파싱 오류:', error);
-      console.error('원본 응답:', response);
-      
-      // 기본 시나리오 반환
-      return this.generateDefaultScenarios(template);
-    }
-  }
-
-  // GPT-4 채팅 완성 호출 (public으로 변경)
-  public async chatCompletion(prompt: string): Promise<string> {
-    // endpoint 끝의 슬래시 제거
-    const cleanEndpoint = this.endpoint.replace(/\/$/, '');
-    const url = `${cleanEndpoint}/openai/deployments/${this.gptModel}/chat/completions?api-version=${this.apiVersion}`;
-    
-    console.log('Chat Completion URL:', url);
-    console.log('Chat Completion Model:', this.gptModel);
-    
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'api-key': this.apiKey,
-      },
-      body: JSON.stringify({
-        messages: [
-          {
-            role: 'system',
-            content: '당신은 소프트웨어 테스트 전문가입니다. 보안 규칙을 반영한 정확하고 실용적인 테스트 시나리오를 생성하는 것이 전문입니다. 항상 유효한 JSON 형태로만 응답하세요.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        max_tokens: 2000,
-        temperature: 0.3,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Chat Completion API Error:', response.status, errorText);
-      throw new Error(`GPT-4 호출 실패: ${response.status} ${response.statusText}\nDetails: ${errorText}`);
-    }
-
-    const data: ChatCompletionResponse = await response.json();
-    console.log('Chat Completion Response:', data);
-    
-    return data.choices[0].message.content;
-  }
-
   // 파일을 텍스트로 읽기
   private readFileAsText(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -327,42 +400,56 @@ ${securityRules.map(rule => `- ${rule.title}: ${rule.content}`).join('\n')}
         id: 'TC001',
         scenario: '정상적인 사용자 로그인 테스트',
         security: '사용자 인증 보안 규칙',
-        expected: '로그인 성공 후 대시보드 이동'
+        expected: '로그인 성공 후 대시보드 이동',
+        precondition: '유효한 사용자 계정 준비',
+        steps: '["1. 로그인 페이지 접근", "2. 유효한 계정 정보 입력", "3. 로그인 버튼 클릭"]'
       },
       {
         id: 'TC002',
         scenario: '잘못된 비밀번호 입력 테스트',
         security: '로그인 실패 처리 규칙',
-        expected: '오류 메시지 표시 및 재시도 허용'
+        expected: '오류 메시지 표시 및 재시도 허용',
+        precondition: '유효한 사용자 ID, 잘못된 비밀번호 준비',
+        steps: '["1. 로그인 페이지 접근", "2. 잘못된 비밀번호 입력", "3. 오류 메시지 확인"]'
       },
       {
         id: 'TC003',
         scenario: 'SQL 인젝션 공격 시도 테스트',
         security: '입력 검증 보안 규칙',
-        expected: '악의적 입력 차단 및 로그 기록'
+        expected: '악의적 입력 차단 및 로그 기록',
+        precondition: 'SQL 인젝션 페이로드 준비',
+        steps: '["1. 입력 폼에 SQL 인젝션 시도", "2. 서버 응답 확인", "3. 로그 기록 확인"]'
       },
       {
         id: 'TC004',
         scenario: '개인정보 마스킹 처리 확인',
         security: '개인정보 보호 규칙',
-        expected: '민감한 정보가 마스킹되어 표시됨'
+        expected: '민감한 정보가 마스킹되어 표시됨',
+        precondition: '개인정보가 포함된 데이터 준비',
+        steps: '["1. 개인정보 조회", "2. 마스킹 처리 확인", "3. 원본 데이터 비교"]'
       },
       {
         id: 'TC005',
         scenario: '권한 없는 접근 시도 테스트',
         security: '접근 제어 보안 규칙',
-        expected: '접근 거부 및 로그 기록'
+        expected: '접근 거부 및 로그 기록',
+        precondition: '권한이 없는 사용자 계정 준비',
+        steps: '["1. 권한 없는 계정으로 로그인", "2. 보호된 리소스 접근 시도", "3. 접근 거부 확인"]'
       }
     ];
 
-    baseScenarios.forEach((base, index) => {
+    baseScenarios.forEach((base) => {
       const scenario: TestScenario = {};
       template.columns.forEach((column, colIndex) => {
-        if (colIndex === 0) scenario[column.name] = base.id;
-        else if (colIndex === 1) scenario[column.name] = base.scenario;
-        else if (colIndex === 2) scenario[column.name] = base.security;
-        else if (colIndex === 3) scenario[column.name] = base.expected;
-        else scenario[column.name] = `기본값 ${colIndex + 1}`;
+        switch (colIndex) {
+          case 0: scenario[column.name] = base.id; break;
+          case 1: scenario[column.name] = base.scenario; break;
+          case 2: scenario[column.name] = base.security; break;
+          case 3: scenario[column.name] = base.expected; break;
+          case 4: scenario[column.name] = base.precondition; break;
+          case 5: scenario[column.name] = base.steps; break;
+          default: scenario[column.name] = `기본값 ${colIndex + 1}`;
+        }
       });
       scenarios.push(scenario);
     });
