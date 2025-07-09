@@ -18,12 +18,12 @@ const App: React.FC = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
-  
+
   // 1단계: 보안 문서
   const [securityDocs, setSecurityDocs] = useState<File[]>([]);
   const [isIndexing, setIsIndexing] = useState(false);
   const [indexingProgress, setIndexingProgress] = useState(0);
-  
+
   // 2단계: 템플릿
   const [templates] = useLocalStorage<Template[]>('testTemplates', []);
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
@@ -35,12 +35,12 @@ const App: React.FC = () => {
     { name: '예상 결과', description: '기대하는 결과', example: '로그인 성공' }
   ]);
   const [isNewTemplateSaved, setIsNewTemplateSaved] = useState(false);
-  
+
   // 3단계: 코드 분석
   const [codeFiles, setCodeFiles] = useState<File[]>([]);
   const [analysisResult, setAnalysisResult] = useState<CodeAnalysisResult | null>(null);
   const [securityRules, setSecurityRules] = useState<SecurityRule[]>([]);
-  
+
   // 4단계: 결과
   const [generatedScenarios, setGeneratedScenarios] = useState<TestScenario[]>([]);
   const [markdownResult, setMarkdownResult] = useState('');
@@ -65,34 +65,34 @@ const App: React.FC = () => {
   const checkApiStatus = async () => {
     try {
       console.log('🔍 프록시 서버 상태 확인 중...');
-      
+
       // 개발/배포 환경 구분
       const isDev = import.meta.env.DEV;
-      
+
       // 임시: 항상 전체 URL 사용
       const healthUrl = 'https://dopaminesun-server-dycxgacfcmbcc2ec.eastus2-01.azurewebsites.net/api/health';
-      
+
       console.log('헬스 체크 URL:', healthUrl);
-      
+
       const response = await fetch(healthUrl);
-        
+
       if (response.ok) {
         const data = await response.json();
         console.log('✅ 프록시 서버 응답:', data);
-        
+
         const openaiConfigured = data.environment?.openaiConfigured || false;
         const searchConfigured = data.environment?.searchConfigured || false;
-        
+
         setApiStatus({
           server: true,
           openai: openaiConfigured,
           search: searchConfigured,
           message: `${isDev ? '개발' : '배포'} 환경 연결 성공`
         });
-        
+
         // 모든 API가 설정되어 있으면 유효
         setApiConfigValid(openaiConfigured && searchConfigured);
-        
+
       } else {
         console.warn('⚠️ 프록시 서버 응답 오류:', response.status);
         setApiStatus({
@@ -105,7 +105,7 @@ const App: React.FC = () => {
       }
     } catch (error) {
       console.error('❌ 프록시 서버 연결 실패:', error);
-      
+
       // 개발 환경에서만 경고 표시
       const isDev = import.meta.env.DEV;
       if (isDev) {
@@ -123,7 +123,7 @@ const App: React.FC = () => {
           message: '배포 환경: 서버 연결 실패'
         });
       }
-      
+
       setApiConfigValid(false);
     }
   };
@@ -135,26 +135,26 @@ const App: React.FC = () => {
 
   const processSecurityDocs = async () => {
     if (securityDocs.length === 0) return;
-    
+
     setIsIndexing(true);
     setIndexingProgress(0);
 
     try {
       console.log('📄 보안 문서 처리 시작...');
       setIndexingProgress(10);
-      
+
       await azureAISearchService.recreateIndexWithCORS();
-      
+
       for (let i = 0; i < securityDocs.length; i++) {
         const file = securityDocs[i];
         const progressPercent = 10 + ((i + 1) / securityDocs.length) * 90;
         setIndexingProgress(progressPercent);
-        
+
         console.log(`📝 ${file.name} 처리 중... (${i + 1}/${securityDocs.length})`);
-        
+
         const content = await readFileContent(file);
         const embedding = await azureOpenAIService.generateEmbedding(content);
-        
+
         await azureAISearchService.indexDocument(
           `doc_${Date.now()}_${i}`,
           file.name,
@@ -163,20 +163,20 @@ const App: React.FC = () => {
           'security-policy',
           embedding
         );
-        
+
         console.log(`✅ ${file.name} 처리 완료!`);
       }
-      
+
       alert(`🎉 보안 문서 인덱싱이 완료되었습니다!\n처리된 문서: ${securityDocs.length}개`);
       setCurrentStep(2);
     } catch (error) {
       console.error('❌ 인덱싱 오류:', error);
-      
+
       let errorMessage = '인덱싱 중 오류가 발생했습니다.\n\n';
-      
+
       if (error instanceof Error) {
         errorMessage += `오류 내용: ${error.message}\n\n`;
-        
+
         if (error.message.includes('fetch')) {
           errorMessage += '💡 해결 방법:\n- 프록시 서버가 실행 중인지 확인해주세요\n- 네트워크 연결을 확인해주세요';
         } else if (error.message.includes('API')) {
@@ -185,7 +185,7 @@ const App: React.FC = () => {
           errorMessage += '💡 해결 방법:\n- 파일 크기를 확인해주세요 (10MB 이하 권장)\n- 지원되는 파일 형식인지 확인해주세요';
         }
       }
-      
+
       alert(errorMessage);
     } finally {
       setIsIndexing(false);
@@ -360,7 +360,7 @@ const App: React.FC = () => {
       // 6. 완료 (100% 진행)
       setProgress(100);
       console.log('🎉 전체 프로세스 완료!');
-      
+
       const successMessage = `
 🎉 테스트 시나리오 생성이 완료되었습니다!
 
@@ -372,18 +372,18 @@ const App: React.FC = () => {
 
 다음 단계로 이동합니다.
       `;
-      
+
       alert(successMessage);
       setCurrentStep(4);
 
     } catch (error) {
       console.error('❌ 시나리오 생성 프로세스 오류:', error);
-      
+
       let errorMessage = '시나리오 생성 중 오류가 발생했습니다.\n\n';
-      
+
       if (error instanceof Error) {
         errorMessage += `오류 내용: ${error.message}\n\n`;
-        
+
         if (error.message.includes('fetch')) {
           errorMessage += '💡 해결 방법:\n- 프록시 서버가 실행 중인지 확인해주세요\n- 네트워크 연결을 확인해주세요';
         } else if (error.message.includes('JSON')) {
@@ -394,7 +394,7 @@ const App: React.FC = () => {
           errorMessage += '💡 해결 방법:\n- 페이지를 새로고침하고 다시 시도해주세요\n- 코드 파일 크기를 줄여보세요';
         }
       }
-      
+
       alert(errorMessage);
     } finally {
       setIsProcessing(false);
@@ -417,7 +417,7 @@ const App: React.FC = () => {
 
     try {
       console.log('🔄 커스텀 프롬프트로 재생성 시작...');
-      
+
       const enhancedPrompt = `
 다음 정보를 바탕으로 실무에서 사용 가능한 테스트 시나리오를 생성해주세요.
 
@@ -455,14 +455,56 @@ ${customPrompt}
 ]
 `;
 
-      const response = await azureOpenAIService.chatCompletion(enhancedPrompt);
-      const cleanedResponse = azureOpenAIService.cleanJsonResponse(response);
+      // 🔥 수정: azureOpenAIService 대신 직접 프록시 API 호출
+      const proxyUrl = import.meta.env.DEV
+        ? 'http://localhost:3001'
+        : (import.meta.env.VITE_PROXY_URL || 'https://dopaminesun-server-dycxgacfcmbcc2ec.eastus2-01.azurewebsites.net');
+
+      const gptModel = import.meta.env.VITE_CHAT_MODEL_NAME || import.meta.env.VITE_GPT_MODEL_NAME || 'gpt-4o-mini';
+      const url = `${proxyUrl}/api/openai/deployments/${gptModel}/chat/completions`;
+
+      console.log('커스텀 재생성 API 호출:', url);
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              role: 'system',
+              content: '당신은 소프트웨어 테스트 전문가입니다. 보안 규칙을 반영한 정확하고 실용적인 테스트 시나리오를 생성하는 것이 전문입니다. 항상 유효한 JSON 형태로만 응답하세요.'
+            },
+            {
+              role: 'user',
+              content: enhancedPrompt
+            }
+          ],
+          max_tokens: 2000,
+          temperature: 0.3,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('커스텀 재생성 API 오류:', response.status, errorText);
+        throw new Error(`GPT-4 호출 실패: ${response.status} ${response.statusText}\nDetails: ${errorText}`);
+      }
+
+      const data = await response.json();
+      const responseContent = data.choices[0].message.content;
+
+      console.log('커스텀 재생성 응답:', responseContent);
+
+      // JSON 응답 정리
+      const cleanedResponse = azureOpenAIService.cleanJsonResponse(responseContent);
       const newScenarios = JSON.parse(cleanedResponse);
-      
+
       if (!Array.isArray(newScenarios)) {
         throw new Error('응답이 배열이 아닙니다');
       }
-      
+
       setGeneratedScenarios(newScenarios);
 
       // 마크다운 재생성
@@ -488,18 +530,18 @@ ${customPrompt}
 - 보안 규칙 반영: ${securityRules.length}개
 
 결과를 확인해보세요!
-      `;
+    `;
 
       alert(successMessage);
-      
+
     } catch (error) {
       console.error('❌ 커스텀 재생성 오류:', error);
-      
+
       let errorMessage = '재생성 중 오류가 발생했습니다.\n\n';
-      
+
       if (error instanceof Error) {
         errorMessage += `오류 내용: ${error.message}\n\n`;
-        
+
         if (error.message.includes('JSON')) {
           errorMessage += '💡 해결 방법:\n- 요구사항을 더 구체적으로 작성해보세요\n- 너무 복잡한 요구사항은 단순화해보세요';
         } else if (error.message.includes('fetch')) {
@@ -508,7 +550,7 @@ ${customPrompt}
           errorMessage += '💡 해결 방법:\n- 프롬프트를 수정하고 다시 시도해보세요\n- 페이지를 새로고침해보세요';
         }
       }
-      
+
       alert(errorMessage);
     } finally {
       setIsRegenerating(false);
@@ -521,7 +563,7 @@ ${customPrompt}
 
   const downloadMarkdown = () => {
     if (!markdownResult) return;
-    
+
     downloadFile(
       markdownResult,
       `test_scenarios_${new Date().toISOString().split('T')[0]}.md`,
@@ -531,7 +573,7 @@ ${customPrompt}
 
   const downloadCSV = () => {
     if (!selectedTemplate || generatedScenarios.length === 0) return;
-    
+
     const csv = MarkdownGenerator.generateCSV(generatedScenarios, selectedTemplate);
     downloadFile(
       csv,
@@ -542,7 +584,7 @@ ${customPrompt}
 
   const downloadJSON = () => {
     if (!selectedTemplate || generatedScenarios.length === 0) return;
-    
+
     const json = MarkdownGenerator.generateJSON(
       generatedScenarios,
       selectedTemplate,
@@ -586,7 +628,7 @@ ${customPrompt}
   return (
     <div className="min-h-screen bg-gray-50">
       <Header currentStep={currentStep} />
-      
+
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* API 상태 표시 */}
         <div className="mb-6">
@@ -637,8 +679,8 @@ ${customPrompt}
         </div>
 
         {/* 단계 표시기 */}
-        <StepIndicator 
-          currentStep={currentStep} 
+        <StepIndicator
+          currentStep={currentStep}
           onStepClick={goToStep}
           allowStepNavigation={true}
         />
@@ -655,7 +697,7 @@ ${customPrompt}
 
               <div className="bg-blue-50 p-4 rounded-lg">
                 <p className="text-blue-800">
-                  회사의 보안 정책 문서를 업로드하여 RAG 검색 인덱스를 구축합니다. 
+                  회사의 보안 정책 문서를 업로드하여 RAG 검색 인덱스를 구축합니다.
                   이 작업은 최초 1회만 수행하면 됩니다.
                 </p>
               </div>
@@ -739,11 +781,10 @@ ${customPrompt}
                     {templates.map((template) => (
                       <div
                         key={template.id}
-                        className={`border rounded-lg p-4 cursor-pointer transition-all ${
-                          selectedTemplate?.id === template.id
+                        className={`border rounded-lg p-4 cursor-pointer transition-all ${selectedTemplate?.id === template.id
                             ? 'border-blue-500 bg-blue-50'
                             : 'border-gray-200 hover:border-gray-300'
-                        }`}
+                          }`}
                         onClick={() => setSelectedTemplate(template)}
                       >
                         <h4 className="font-medium text-gray-900">{template.name}</h4>
@@ -783,7 +824,7 @@ ${customPrompt}
               {/* 새 템플릿 생성 */}
               <div className="border-t pt-6">
                 <h3 className="text-lg font-medium text-gray-900 mb-4">새 템플릿 생성</h3>
-                
+
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -994,7 +1035,7 @@ ${customPrompt}
 
               <div className="bg-green-50 p-4 rounded-lg">
                 <p className="text-green-800">
-                  총 {generatedScenarios.length}개의 테스트 시나리오가 생성되었습니다. 
+                  총 {generatedScenarios.length}개의 테스트 시나리오가 생성되었습니다.
                   다양한 형식으로 다운로드할 수 있습니다.
                 </p>
               </div>
@@ -1035,10 +1076,10 @@ ${customPrompt}
                   <span>결과 커스터마이징</span>
                 </h3>
                 <p className="text-sm text-gray-600 mb-4">
-                  생성된 테스트 시나리오가 마음에 들지 않다면, 아래에 추가 요구사항을 입력하고 <strong>빠르게</strong> 재생성하세요. 
+                  생성된 테스트 시나리오가 마음에 들지 않다면, 아래에 추가 요구사항을 입력하고 <strong>빠르게</strong> 재생성하세요.
                   기존 코드 분석 결과를 활용하므로 빠릅니다.
                 </p>
-                
+
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1074,7 +1115,7 @@ ${customPrompt}
                         </>
                       )}
                     </button>
-                    
+
                     <button
                       onClick={resetCustomPrompt}
                       className="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 flex items-center space-x-2"
