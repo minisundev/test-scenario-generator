@@ -18,4 +18,4 @@ EXPOSE 4173
 # proxy-server가 3000포트 쓰는 경우
 EXPOSE 3000   
 
-CMD ["./start.sh"]
+CMD ["bash", "./start.sh"]
