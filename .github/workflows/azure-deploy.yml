@@ -9,6 +9,7 @@ on:
 env:
   AZURE_WEBAPP_NAME: dopaminesun-web-app
   REGISTRY_LOGIN_SERVER: dopaminesun.azurecr.io
+  COMPOSE_PROJECT_NAME: frontend  # 프로젝트 이름 명시적으로 설정
 
 jobs:
   build-and-deploy:
@@ -38,15 +39,34 @@ jobs:
 
       - name: Build Docker images
         run: |
-          COMPOSE_PROJECT_NAME=frontend docker-compose -f docker-compose.yml build --no-cache
-
-      - name: Check built Docker images
+          COMPOSE_PROJECT_NAME=${{ env.COMPOSE_PROJECT_NAME }} docker-compose -f docker-compose.yml build --no-cache
+    
+      - name: Show Docker images
         run: docker images
 
       - name: Tag and push images to ACR
         run: |
-          docker tag frontend_frontend:latest ${{ env.REGISTRY_LOGIN_SERVER }}/frontend:latest
-          docker tag frontend_proxy-server:latest ${{ env.REGISTRY_LOGIN_SERVER }}/proxy-server:latest
+          # 실제 생성된 이미지명을 동적으로 찾기
+          FRONTEND_IMAGE=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep frontend | head -1)
+          PROXY_IMAGE=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep proxy-server | head -1)
+          
+          echo "Found frontend image: $FRONTEND_IMAGE"
+          echo "Found proxy-server image: $PROXY_IMAGE"
+          
+          # 이미지가 존재하는지 확인
+          if [ -z "$FRONTEND_IMAGE" ]; then
+            echo "Error: Frontend image not found"
+            exit 1
+          fi
+          
+          if [ -z "$PROXY_IMAGE" ]; then
+            echo "Error: Proxy-server image not found"
+            exit 1
+          fi
+          
+          # 태그 및 푸시
+          docker tag $FRONTEND_IMAGE ${{ env.REGISTRY_LOGIN_SERVER }}/frontend:latest
+          docker tag $PROXY_IMAGE ${{ env.REGISTRY_LOGIN_SERVER }}/proxy-server:latest
           docker push ${{ env.REGISTRY_LOGIN_SERVER }}/frontend:latest
           docker push ${{ env.REGISTRY_LOGIN_SERVER }}/proxy-server:latest
 

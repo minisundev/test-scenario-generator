@@ -20,7 +20,7 @@ services:
       - app-network
 
   frontend:
-    image: dopaminesun.azurecr.io/frontend:latest
+    image: frontend:latest 
     build:
       context: .
       dockerfile: Dockerfile.frontend
