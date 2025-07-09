@@ -1,16 +1,18 @@
-FROM node:18 AS build
+FROM node:18
 
 WORKDIR /app
 
-COPY . .
-
-# 루트 디렉토리 의존성 설치
+COPY package*.json ./
 RUN npm install
 
-# 권한 부여
+COPY . .
+
+ENV VITE_USE_PROXY=false
+ENV VITE_AZURE_OPENAI_API_KEY=placeholder
+ENV VITE_AZURE_SEARCH_API_KEY=placeholder
+
 RUN chmod +x ./start.sh
 
-# Vite preview 기본 포트
-EXPOSE 4173   
+EXPOSE 3000
 
-CMD ["bash", "./start.sh"]
+CMD ["serve", "-s", "dist", "-l", "3000"]
