@@ -1,8 +1,6 @@
-# docker-compose.yml
 version: '3.8'
 
 services:
-  # 프록시 서버 (백엔드)
   proxy-server:
     build:
       context: ./proxy-server
@@ -10,29 +8,28 @@ services:
     ports:
       - "3001:3001"
     environment:
-      - PORT=3001
-      - NODE_ENV=production
-      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
-      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
-      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
-      - AZURE_SEARCH_API_KEY=${AZURE_SEARCH_API_KEY}
-      - AZURE_SEARCH_ENDPOINT=${AZURE_SEARCH_ENDPOINT}
-      - AZURE_SEARCH_INDEX_NAME=${AZURE_SEARCH_INDEX_NAME}
+      PORT: 3001
+      NODE_ENV: production
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION}
+      AZURE_SEARCH_API_KEY: ${AZURE_SEARCH_API_KEY}
+      AZURE_SEARCH_ENDPOINT: ${AZURE_SEARCH_ENDPOINT}
+      AZURE_SEARCH_INDEX_NAME: ${AZURE_SEARCH_INDEX_NAME}
     networks:
       - app-network
 
-  # 프론트엔드 (React 앱)
   frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
       args:
-      - VITE_API_BASE_URL=http://proxy-server:3001
+        VITE_API_BASE_URL: http://proxy-server:3001
     ports:
       - "3000:3000"
     environment:
-      - NODE_ENV=production
-      - VITE_API_BASE_URL=http://proxy-server:3001
+      NODE_ENV: production
+      VITE_API_BASE_URL: http://proxy-server:3001
     depends_on:
       - proxy-server
     networks:
