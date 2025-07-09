@@ -38,12 +38,15 @@ jobs:
 
       - name: Build Docker images
         run: |
-          docker-compose -f docker-compose.yml build
+          COMPOSE_PROJECT_NAME=frontend docker-compose -f docker-compose.yml build --no-cache
+
+      - name: Check built Docker images
+        run: docker images
 
       - name: Tag and push images to ACR
         run: |
-          docker tag test-scenario-generator_frontend:latest ${{ env.REGISTRY_LOGIN_SERVER }}/frontend:latest
-          docker tag test-scenario-generator_proxy-server:latest ${{ env.REGISTRY_LOGIN_SERVER }}/proxy-server:latest
+          docker tag frontend_frontend:latest ${{ env.REGISTRY_LOGIN_SERVER }}/frontend:latest
+          docker tag frontend_proxy-server:latest ${{ env.REGISTRY_LOGIN_SERVER }}/proxy-server:latest
           docker push ${{ env.REGISTRY_LOGIN_SERVER }}/frontend:latest
           docker push ${{ env.REGISTRY_LOGIN_SERVER }}/proxy-server:latest
 
