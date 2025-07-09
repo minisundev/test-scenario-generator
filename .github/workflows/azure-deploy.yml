@@ -8,7 +8,7 @@ on:
 
 env:
   FRONTEND_WEBAPP_NAME: dopaminesun-web-app
-  BACKEND_WEBAPP_NAME: dopaminesun-proxy-server
+  BACKEND_WEBAPP_NAME: dopaminesun-server
   REGISTRY_LOGIN_SERVER: dopaminesun.azurecr.io
   COMPOSE_PROJECT_NAME: frontend
 
