@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const fetch = require('node-fetch');
+const path = require('path');
 require('dotenv').config();
 
 const app = express();
@@ -13,6 +14,9 @@ app.use(cors({
 }));
 
 app.use(express.json({ limit: '50mb' }));
+
+// === 정적 파일 서빙 추가 ===
+app.use(express.static(path.join(__dirname, '../dist')));
 
 // 텍스트 요약 함수
 function summarizeContent(content, maxLength = 500) {
@@ -665,6 +669,16 @@ app.get('/api/health', (req, res) => {
       searchConfigured: !!process.env.VITE_AZURE_SEARCH_API_KEY
     }
   });
+});
+
+// === SPA 라우팅 지원 (모든 API가 아닌 경로는 index.html로) ===
+app.get('*', (req, res) => {
+  // API 경로가 아닌 모든 경로는 index.html 반환 (React Router 지원)
+  if (!req.path.startsWith('/api/')) {
+    res.sendFile(path.join(__dirname, '../dist/index.html'));
+  } else {
+    res.status(404).json({ error: 'API endpoint not found' });
+  }
 });
 
 app.listen(PORT, '0.0.0.0', () => {
