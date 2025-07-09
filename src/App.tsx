@@ -66,11 +66,8 @@ const App: React.FC = () => {
   try {
     console.log('🔍 프록시 서버 상태 확인 중...');
     
-    // 배포 환경에서는 전체 URL 사용
-    const isDev = import.meta.env.DEV;
-    const healthUrl = isDev 
-      ? 'http://localhost:3001/api/health' 
-      : 'https://dopaminesun-server-dycxgacfcmbcc2ec.eastus2-01.azurewebsites.net/api/health';
+    // 임시: 항상 전체 URL 사용
+    const healthUrl = 'https://dopaminesun-server-dycxgacfcmbcc2ec.eastus2-01.azurewebsites.net/api/health';
     
     console.log('헬스 체크 URL:', healthUrl);
     
