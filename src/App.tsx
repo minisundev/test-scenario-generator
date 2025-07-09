@@ -460,7 +460,7 @@ ${customPrompt}
         ? 'http://localhost:3001'
         : (import.meta.env.VITE_PROXY_URL || 'https://dopaminesun-server-dycxgacfcmbcc2ec.eastus2-01.azurewebsites.net');
 
-      const gptModel = import.meta.env.VITE_CHAT_MODEL_NAME || import.meta.env.VITE_GPT_MODEL_NAME || 'gpt-4o-mini';
+      const gptModel = import.meta.env.VITE_GPT_MODEL_NAME || 'gpt-4.1';
       const url = `${proxyUrl}/api/openai/deployments/${gptModel}/chat/completions`;
 
       console.log('커스텀 재생성 API 호출:', url);

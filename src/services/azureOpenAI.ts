@@ -7,7 +7,7 @@ class AzureOpenAIService {
 
   constructor() {
     // 클라이언트에서는 모델명만 저장 (API 키는 서버에서 처리)
-    this.gptModel = import.meta.env.VITE_CHAT_MODEL_NAME || import.meta.env.VITE_GPT_MODEL_NAME || 'gpt-4o-mini';
+    this.gptModel = import.meta.env.VITE_GPT_MODEL_NAME || 'gpt-4.1';
     this.embeddingModel = import.meta.env.VITE_EMBEDDING_MODEL_NAME || 'text-embedding-ada-002';
   }
 
