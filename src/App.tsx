@@ -63,17 +63,18 @@ const App: React.FC = () => {
 
   // 프록시 서버 상태 확인
   const checkApiStatus = async () => {
-    try {
-      console.log('🔍 프록시 서버 상태 확인 중...');
-      
-      // 환경별 URL 결정
-      const isDev = import.meta.env.DEV;
-      const baseUrl = isDev ? 'http://localhost:3001' : '';
-      const healthUrl = baseUrl ? `${baseUrl}/api/health` : '/api/health';
-      
-      console.log('헬스 체크 URL:', healthUrl);
-      
-      const response = await fetch(healthUrl);
+  try {
+    console.log('🔍 프록시 서버 상태 확인 중...');
+    
+    // 배포 환경에서는 전체 URL 사용
+    const isDev = import.meta.env.DEV;
+    const healthUrl = isDev 
+      ? 'http://localhost:3001/api/health' 
+      : 'https://dopaminesun-server-dycxgacfcmbcc2ec.eastus2-01.azurewebsites.net/api/health';
+    
+    console.log('헬스 체크 URL:', healthUrl);
+    
+    const response = await fetch(healthUrl);
       
       if (response.ok) {
         const data = await response.json();
