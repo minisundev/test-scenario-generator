@@ -4,7 +4,7 @@ const fetch = require('node-fetch');
 require('dotenv').config();
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3000;
 
 // CORS 설정
 app.use(cors({
@@ -667,8 +667,8 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 프록시 서버가 http://localhost:${PORT} 에서 실행 중입니다.`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 프록시 서버가 http://0.0.0.0:${PORT} 에서 실행 중입니다.`);
   console.log(`🔧 환경변수 상태:`);
   console.log(`   - OpenAI API: ${process.env.VITE_AZURE_OPENAI_API_KEY ? '✅ 설정됨' : '❌ 미설정'}`);
   console.log(`   - Search API: ${process.env.VITE_AZURE_SEARCH_API_KEY ? '✅ 설정됨' : '❌ 미설정'}`);
