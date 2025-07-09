@@ -55,8 +55,8 @@ app.post('/api/openai/*', async (req, res) => {
     const relativePath = req.path.replace('/api/openai', '');
     
     // '/openai'를 강제로 붙임 (env 수정 없이)
-    const endpoint = process.env.VITE_AZURE_OPENAI_ENDPOINT.replace(/\/$/, '');
-    const fullOpenAIUrl = `${endpoint}/openai${relativePath}?api-version=${process.env.VITE_AZURE_OPENAI_API_VERSION}`;
+    const endpoint = process.env.AZURE_OPENAI_ENDPOINT.replace(/\/$/, '');
+    const fullOpenAIUrl = `${endpoint}/openai${relativePath}?api-version=${process.env.AZURE_OPENAI_API_VERSION}`;
     
     console.log('🔁 OpenAI 프록시 요청:', fullOpenAIUrl);
     
@@ -64,7 +64,7 @@ app.post('/api/openai/*', async (req, res) => {
       method: req.method,
       headers: {
         'Content-Type': 'application/json',
-        'api-key': process.env.VITE_AZURE_OPENAI_API_KEY,
+        'api-key': process.env.AZURE_OPENAI_API_KEY,
       },
       body: JSON.stringify(req.body),
     });
@@ -89,7 +89,7 @@ app.post('/api/openai/*', async (req, res) => {
 app.post('/api/search/create-index', async (req, res) => {
   try {
     const { indexName } = req.body;
-    const url = `${process.env.VITE_AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2023-11-01`;
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2023-11-01`;
     
     const indexSchema = {
       name: indexName,
@@ -174,7 +174,7 @@ app.post('/api/search/create-index', async (req, res) => {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'api-key': process.env.VITE_AZURE_SEARCH_API_KEY,
+        'api-key': process.env.AZURE_SEARCH_API_KEY,
       },
       body: JSON.stringify(indexSchema),
     });
@@ -198,7 +198,7 @@ app.post('/api/search/index-document', async (req, res) => {
   try {
     const { id, title, content, filename, category, contentVector } = req.body;
     const indexName = 'security-docs-index';
-    const url = `${process.env.VITE_AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/index?api-version=2023-11-01`;
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/index?api-version=2023-11-01`;
     
     const document = {
       value: [
@@ -220,7 +220,7 @@ app.post('/api/search/index-document', async (req, res) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'api-key': process.env.VITE_AZURE_SEARCH_API_KEY,
+        'api-key': process.env.AZURE_SEARCH_API_KEY,
       },
       body: JSON.stringify(document),
     });
@@ -244,7 +244,7 @@ app.post('/api/search/index-documents', async (req, res) => {
   try {
     const { documents } = req.body;
     const indexName = 'security-docs-index';
-    const url = `${process.env.VITE_AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/index?api-version=2023-11-01`;
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/index?api-version=2023-11-01`;
     
     const batch = {
       value: documents.map(doc => ({
@@ -259,7 +259,7 @@ app.post('/api/search/index-documents', async (req, res) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'api-key': process.env.VITE_AZURE_SEARCH_API_KEY,
+        'api-key': process.env.AZURE_SEARCH_API_KEY,
       },
       body: JSON.stringify(batch),
     });
@@ -293,7 +293,7 @@ app.post('/api/search/hybrid-search', async (req, res) => {
     } = req.body;
     
     const indexName = 'security-docs-index';
-    const url = `${process.env.VITE_AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/search?api-version=2023-11-01`;
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/search?api-version=2023-11-01`;
     
     const searchBody = {
       search: query || '*',
@@ -329,7 +329,7 @@ app.post('/api/search/hybrid-search', async (req, res) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'api-key': process.env.VITE_AZURE_SEARCH_API_KEY,
+        'api-key': process.env.AZURE_SEARCH_API_KEY,
       },
       body: JSON.stringify(searchBody),
     });
@@ -391,7 +391,7 @@ app.post('/api/search/category-search', async (req, res) => {
     } = req.body;
     
     const indexName = 'security-docs-index';
-    const url = `${process.env.VITE_AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/search?api-version=2023-11-01`;
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/search?api-version=2023-11-01`;
     
     const searchBody = {
       search: query,
@@ -413,7 +413,7 @@ app.post('/api/search/category-search', async (req, res) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'api-key': process.env.VITE_AZURE_SEARCH_API_KEY,
+        'api-key': process.env.AZURE_SEARCH_API_KEY,
       },
       body: JSON.stringify(searchBody),
     });
@@ -462,14 +462,14 @@ app.post('/api/search/category-search', async (req, res) => {
 app.get('/api/search/index-stats', async (req, res) => {
   try {
     const indexName = 'security-docs-index';
-    const url = `${process.env.VITE_AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/stats?api-version=2023-11-01`;
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/stats?api-version=2023-11-01`;
     
     console.log('인덱스 상태 확인 요청:', url);
     
     const response = await fetch(url, {
       method: 'GET',
       headers: {
-        'api-key': process.env.VITE_AZURE_SEARCH_API_KEY,
+        'api-key': process.env.AZURE_SEARCH_API_KEY,
       },
     });
 
@@ -494,14 +494,14 @@ app.get('/api/search/index-stats', async (req, res) => {
 app.delete('/api/search/delete-index', async (req, res) => {
   try {
     const { indexName } = req.body;
-    const url = `${process.env.VITE_AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2023-11-01`;
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2023-11-01`;
     
     console.log('인덱스 삭제 요청:', url);
     
     const response = await fetch(url, {
       method: 'DELETE',
       headers: {
-        'api-key': process.env.VITE_AZURE_SEARCH_API_KEY,
+        'api-key': process.env.AZURE_SEARCH_API_KEY,
       },
     });
 
@@ -522,14 +522,14 @@ app.delete('/api/search/delete-index', async (req, res) => {
 app.post('/api/search/index-exists', async (req, res) => {
   try {
     const { indexName } = req.body;
-    const url = `${process.env.VITE_AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2023-11-01`;
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2023-11-01`;
     
     console.log('인덱스 존재 여부 확인 요청:', url);
     
     const response = await fetch(url, {
       method: 'GET',
       headers: {
-        'api-key': process.env.VITE_AZURE_SEARCH_API_KEY,
+        'api-key': process.env.AZURE_SEARCH_API_KEY,
       },
     });
 
@@ -546,7 +546,7 @@ app.post('/api/search/index-exists', async (req, res) => {
 app.put('/api/search/indexes/:indexName', async (req, res) => {
   try {
     const { indexName } = req.params;
-    const url = `${process.env.VITE_AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2023-11-01`;
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2023-11-01`;
     
     console.log('인덱스 생성 요청:', url);
     
@@ -554,7 +554,7 @@ app.put('/api/search/indexes/:indexName', async (req, res) => {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'api-key': process.env.VITE_AZURE_SEARCH_API_KEY,
+        'api-key': process.env.AZURE_SEARCH_API_KEY,
       },
       body: JSON.stringify(req.body),
     });
@@ -577,14 +577,14 @@ app.put('/api/search/indexes/:indexName', async (req, res) => {
 app.delete('/api/search/indexes/:indexName', async (req, res) => {
   try {
     const { indexName } = req.params;
-    const url = `${process.env.VITE_AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2023-11-01`;
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2023-11-01`;
     
     console.log('인덱스 삭제 요청:', url);
     
     const response = await fetch(url, {
       method: 'DELETE',
       headers: {
-        'api-key': process.env.VITE_AZURE_SEARCH_API_KEY,
+        'api-key': process.env.AZURE_SEARCH_API_KEY,
       },
     });
 
@@ -605,7 +605,7 @@ app.delete('/api/search/indexes/:indexName', async (req, res) => {
 app.post('/api/search/indexes/:indexName/docs/index', async (req, res) => {
   try {
     const { indexName } = req.params;
-    const url = `${process.env.VITE_AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/index?api-version=2023-11-01`;
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/index?api-version=2023-11-01`;
     
     console.log('문서 인덱싱 요청:', url);
     
@@ -613,7 +613,7 @@ app.post('/api/search/indexes/:indexName/docs/index', async (req, res) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'api-key': process.env.VITE_AZURE_SEARCH_API_KEY,
+        'api-key': process.env.AZURE_SEARCH_API_KEY,
       },
       body: JSON.stringify(req.body),
     });
@@ -636,7 +636,7 @@ app.post('/api/search/indexes/:indexName/docs/index', async (req, res) => {
 app.post('/api/search/indexes/:indexName/docs/search', async (req, res) => {
   try {
     const { indexName } = req.params;
-    const url = `${process.env.VITE_AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/search?api-version=2023-11-01`;
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/search?api-version=2023-11-01`;
     
     console.log('문서 검색 요청:', url);
     
@@ -644,7 +644,7 @@ app.post('/api/search/indexes/:indexName/docs/search', async (req, res) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'api-key': process.env.VITE_AZURE_SEARCH_API_KEY,
+        'api-key': process.env.AZURE_SEARCH_API_KEY,
       },
       body: JSON.stringify(req.body),
     });
@@ -669,8 +669,8 @@ app.get('/api/health', (req, res) => {
     status: 'OK', 
     timestamp: new Date().toISOString(),
     environment: {
-      openaiConfigured: !!process.env.VITE_AZURE_OPENAI_API_KEY,
-      searchConfigured: !!process.env.VITE_AZURE_SEARCH_API_KEY
+      openaiConfigured: !!process.env.AZURE_OPENAI_API_KEY,
+      searchConfigured: !!process.env.AZURE_SEARCH_API_KEY
     }
   });
 });
@@ -688,6 +688,6 @@ app.get('*', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 프록시 서버가 http://0.0.0.0:${PORT} 에서 실행 중입니다.`);
   console.log(`🔧 환경변수 상태:`);
-  console.log(`   - OpenAI API: ${process.env.VITE_AZURE_OPENAI_API_KEY ? '✅ 설정됨' : '❌ 미설정'}`);
-  console.log(`   - Search API: ${process.env.VITE_AZURE_SEARCH_API_KEY ? '✅ 설정됨' : '❌ 미설정'}`);
+  console.log(`   - OpenAI API: ${process.env.AZURE_OPENAI_API_KEY ? '✅ 설정됨' : '❌ 미설정'}`);
+  console.log(`   - Search API: ${process.env.AZURE_SEARCH_API_KEY ? '✅ 설정됨' : '❌ 미설정'}`);
 });
