@@ -7,9 +7,10 @@ on:
     branches: [ main ]
 
 env:
-  AZURE_WEBAPP_NAME: dopaminesun-web-app
+  FRONTEND_WEBAPP_NAME: dopaminesun-web-app
+  BACKEND_WEBAPP_NAME: dopaminesun-proxy-server
   REGISTRY_LOGIN_SERVER: dopaminesun.azurecr.io
-  COMPOSE_PROJECT_NAME: frontend  # 프로젝트 이름 명시적으로 설정
+  COMPOSE_PROJECT_NAME: frontend
 
 jobs:
   build-and-deploy:
@@ -73,5 +74,11 @@ jobs:
       - name: Deploy frontend to Azure Web App
         uses: azure/webapps-deploy@v2
         with:
-          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          app-name: ${{ env.FRONTEND_WEBAPP_NAME }}
           images: ${{ env.REGISTRY_LOGIN_SERVER }}/frontend:latest
+
+      - name: Deploy backend to Azure Web App
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: ${{ env.BACKEND_WEBAPP_NAME }}
+          images: ${{ env.REGISTRY_LOGIN_SERVER }}/proxy-server:latest
