@@ -2,20 +2,21 @@ FROM node:18 AS build
 
 WORKDIR /app
 
-COPY . .
-
-# 루트 디렉토리 의존성 설치
+COPY package*.json ./
 RUN npm install
 
-# 프록시 서버 의존성 설치
-RUN cd proxy-server && npm install
+COPY . .
 
-# 권한 부여
-RUN chmod +x ./start.sh
+# 빌드 시 환경변수 설정 (Azure에서는 프록시 사용 안 함)
+ENV VITE_USE_PROXY=false
+ENV VITE_AZURE_OPENAI_API_KEY=placeholder
+ENV VITE_AZURE_SEARCH_API_KEY=placeholder
 
-# Vite preview 기본 포트
-EXPOSE 4173   
-# proxy-server가 3000포트 쓰는 경우
-EXPOSE 3000   
+RUN npm run build
 
-CMD ["bash", "./start.sh"]
+# Nginx로 정적 파일 서빙
+FROM nginx:alpine
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/nginx.conf
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
