@@ -20,7 +20,7 @@ services:
       - app-network
 
   frontend:
-    image: frontend:latest 
+    image: dopaminesun.azurecr.io/frontend:latest
     build:
       context: .
       dockerfile: Dockerfile.frontend
@@ -35,6 +35,8 @@ services:
       - proxy-server
     networks:
       - app-network
+    # Azure App Service를 위한 명령어 지정
+    command: ["nginx", "-g", "daemon off;"]
 
 networks:
   app-network:
