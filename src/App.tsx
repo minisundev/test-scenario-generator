@@ -11,7 +11,7 @@ import { azureAISearchService } from './services/azureAISearch.ts';
 import { MarkdownGenerator } from './utils/markdownGenerator.ts';
 import { SUPPORTED_CODE_EXTENSIONS, SUPPORTED_DOC_EXTENSIONS, downloadFile } from './utils/fileUtils.ts';
 import { useLocalStorage } from './hooks/useLocalStorage.ts';
-import { AlertCircle, Plus, Trash2, Download, Upload, Settings, FileText, Zap, ArrowRight, RefreshCw, RotateCcw } from 'lucide-react';
+import { AlertCircle, Plus, Trash2, Download, Upload, Settings, FileText, Zap, ArrowRight, RefreshCw, RotateCcw, Wifi, WifiOff } from 'lucide-react';
 
 const App: React.FC = () => {
   // 기본 상태
@@ -49,11 +49,83 @@ const App: React.FC = () => {
 
   // API 설정 확인
   const [apiConfigValid, setApiConfigValid] = useState(false);
+  const [apiStatus, setApiStatus] = useState({
+    server: false,
+    openai: false,
+    search: false,
+    message: '연결 확인 중...'
+  });
 
+  // 컴포넌트 마운트 시 API 상태 확인
   useEffect(() => {
-    // 그냥 항상 활성화 (배포 환경에서는 프록시 서버가 API 키를 처리)
-    setApiConfigValid(true);
+    checkApiStatus();
   }, []);
+
+  // 프록시 서버 상태 확인
+  const checkApiStatus = async () => {
+    try {
+      console.log('🔍 프록시 서버 상태 확인 중...');
+      
+      // 환경별 URL 결정
+      const isDev = import.meta.env.DEV;
+      const baseUrl = isDev ? 'http://localhost:3001' : '';
+      const healthUrl = baseUrl ? `${baseUrl}/api/health` : '/api/health';
+      
+      console.log('헬스 체크 URL:', healthUrl);
+      
+      const response = await fetch(healthUrl);
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('✅ 프록시 서버 응답:', data);
+        
+        const openaiConfigured = data.environment?.openaiConfigured || false;
+        const searchConfigured = data.environment?.searchConfigured || false;
+        
+        setApiStatus({
+          server: true,
+          openai: openaiConfigured,
+          search: searchConfigured,
+          message: `${isDev ? '개발' : '배포'} 환경 연결 성공`
+        });
+        
+        // 모든 API가 설정되어 있으면 유효
+        setApiConfigValid(openaiConfigured && searchConfigured);
+        
+      } else {
+        console.warn('⚠️ 프록시 서버 응답 오류:', response.status);
+        setApiStatus({
+          server: false,
+          openai: false,
+          search: false,
+          message: `서버 응답 오류: ${response.status}`
+        });
+        setApiConfigValid(false);
+      }
+    } catch (error) {
+      console.error('❌ 프록시 서버 연결 실패:', error);
+      
+      // 개발 환경에서만 경고 표시
+      const isDev = import.meta.env.DEV;
+      if (isDev) {
+        setApiStatus({
+          server: false,
+          openai: false,
+          search: false,
+          message: '개발 환경: 프록시 서버(localhost:3001) 연결 실패'
+        });
+      } else {
+        setApiStatus({
+          server: false,
+          openai: false,
+          search: false,
+          message: '배포 환경: 서버 연결 실패'
+        });
+      }
+      
+      setApiConfigValid(false);
+    }
+  };
 
   // 1단계: 보안 문서 처리
   const handleSecurityDocsUpload = (files: File[]) => {
@@ -67,24 +139,21 @@ const App: React.FC = () => {
     setIndexingProgress(0);
 
     try {
-      // 먼저 CORS 설정이 포함된 인덱스 생성
-      console.log('CORS 설정이 포함된 인덱스 생성 중...');
+      console.log('📄 보안 문서 처리 시작...');
       setIndexingProgress(10);
+      
       await azureAISearchService.recreateIndexWithCORS();
       
       for (let i = 0; i < securityDocs.length; i++) {
         const file = securityDocs[i];
-        setIndexingProgress(10 + ((i + 1) / securityDocs.length) * 90);
+        const progressPercent = 10 + ((i + 1) / securityDocs.length) * 90;
+        setIndexingProgress(progressPercent);
         
-        // 파일 내용 읽기
+        console.log(`📝 ${file.name} 처리 중... (${i + 1}/${securityDocs.length})`);
+        
         const content = await readFileContent(file);
-        
-        // 임베딩 생성
-        console.log(`${file.name} 임베딩 생성 중...`);
         const embedding = await azureOpenAIService.generateEmbedding(content);
         
-        // 인덱싱
-        console.log(`${file.name} 인덱싱 중...`);
         await azureAISearchService.indexDocument(
           `doc_${Date.now()}_${i}`,
           file.name,
@@ -94,14 +163,29 @@ const App: React.FC = () => {
           embedding
         );
         
-        console.log(`${file.name} 처리 완료!`);
+        console.log(`✅ ${file.name} 처리 완료!`);
       }
       
-      alert('보안 문서 인덱싱이 완료되었습니다!');
+      alert(`🎉 보안 문서 인덱싱이 완료되었습니다!\n처리된 문서: ${securityDocs.length}개`);
       setCurrentStep(2);
     } catch (error) {
-      console.error('인덱싱 오류:', error);
-      alert('인덱싱 중 오류가 발생했습니다: ' + (error as Error).message);
+      console.error('❌ 인덱싱 오류:', error);
+      
+      let errorMessage = '인덱싱 중 오류가 발생했습니다.\n\n';
+      
+      if (error instanceof Error) {
+        errorMessage += `오류 내용: ${error.message}\n\n`;
+        
+        if (error.message.includes('fetch')) {
+          errorMessage += '💡 해결 방법:\n- 프록시 서버가 실행 중인지 확인해주세요\n- 네트워크 연결을 확인해주세요';
+        } else if (error.message.includes('API')) {
+          errorMessage += '💡 해결 방법:\n- Azure API 키 설정을 확인해주세요\n- 서버 로그를 확인해주세요';
+        } else {
+          errorMessage += '💡 해결 방법:\n- 파일 크기를 확인해주세요 (10MB 이하 권장)\n- 지원되는 파일 형식인지 확인해주세요';
+        }
+      }
+      
+      alert(errorMessage);
     } finally {
       setIsIndexing(false);
     }
@@ -112,7 +196,10 @@ const App: React.FC = () => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => resolve(e.target?.result as string || '');
-      reader.onerror = reject;
+      reader.onerror = (error) => {
+        console.error('파일 읽기 오류:', error);
+        reject(new Error(`파일 읽기 실패: ${file.name}`));
+      };
       reader.readAsText(file);
     });
   };
@@ -148,8 +235,8 @@ const App: React.FC = () => {
 
     try {
       const newTemplate = templateService.saveTemplate(templateName, templateColumns);
-      setSelectedTemplate(newTemplate); // 저장한 템플릿을 자동으로 선택
-      setIsNewTemplateSaved(true); // 저장 완료 상태 설정
+      setSelectedTemplate(newTemplate);
+      setIsNewTemplateSaved(true);
       alert('템플릿이 저장되었습니다!');
     } catch (error) {
       alert('템플릿 저장 실패: ' + (error as Error).message);
@@ -168,13 +255,12 @@ const App: React.FC = () => {
       return;
     }
 
-    // 임시 템플릿 객체 생성 (저장하지 않고 바로 사용)
     const tempTemplate: Template = {
-      id: Date.now(), // number로 변경
+      id: Date.now(),
       name: templateName,
       columns: templateColumns,
-      createdAt: new Date().toISOString(), // string으로 변경
-      updatedAt: new Date().toISOString() // string으로 변경
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
 
     setSelectedTemplate(tempTemplate);
@@ -205,7 +291,6 @@ const App: React.FC = () => {
     setCodeFiles(files);
   };
 
-  // 3단계: 코드 분석 및 시나리오 생성 (수정된 버전)
   const generateTestScenarios = async () => {
     if (!selectedTemplate) {
       alert('템플릿을 선택해주세요.');
@@ -233,9 +318,6 @@ const App: React.FC = () => {
       // 2. RAG 기반 보안 규칙 검색 (40% 진행)
       setProgress(40);
       console.log('🔍 2단계: 보안 규칙 검색 시작...');
-      console.log('검색 키워드:', codeAnalysis.keywords);
-      console.log('보안 우려사항:', codeAnalysis.securityConcerns);
-      
       const rules = await azureOpenAIService.searchSecurityRules(codeAnalysis);
       setSecurityRules(rules);
       console.log(`✅ 보안 규칙 검색 완료: ${rules.length}개 규칙 발견`);
@@ -243,7 +325,7 @@ const App: React.FC = () => {
       // 3. 보안 규칙이 없는 경우 경고
       if (rules.length === 0) {
         console.warn('⚠️ 관련 보안 규칙을 찾지 못했습니다.');
-        alert('관련 보안 규칙을 찾지 못했습니다. 기본 시나리오로 생성합니다.');
+        alert('⚠️ 관련 보안 규칙을 찾지 못했습니다.\n\n가능한 원인:\n- 1단계에서 보안 문서를 업로드하지 않았거나\n- 업로드한 문서에 관련 내용이 없습니다\n\n기본 보안 가이드라인으로 시나리오를 생성합니다.');
       }
 
       // 4. 테스트 시나리오 생성 (70% 진행)
@@ -265,7 +347,7 @@ const App: React.FC = () => {
         selectedTemplate,
         {
           codeAnalysis: codeAnalysis,
-          securityRules: rules, // RAG 검색 결과 포함
+          securityRules: rules,
           projectName: '테스트 프로젝트',
           version: '1.0.0',
           author: 'AI 자동생성'
@@ -278,9 +360,8 @@ const App: React.FC = () => {
       setProgress(100);
       console.log('🎉 전체 프로세스 완료!');
       
-      // 성공 메시지
       const successMessage = `
-테스트 시나리오 생성이 완료되었습니다!
+🎉 테스트 시나리오 생성이 완료되었습니다!
 
 📊 생성 결과:
 - 테스트 케이스: ${scenarios.length}개
@@ -297,19 +378,17 @@ const App: React.FC = () => {
     } catch (error) {
       console.error('❌ 시나리오 생성 프로세스 오류:', error);
       
-      // 상세한 오류 정보 제공
       let errorMessage = '시나리오 생성 중 오류가 발생했습니다.\n\n';
       
       if (error instanceof Error) {
         errorMessage += `오류 내용: ${error.message}\n\n`;
         
-        // 일반적인 오류 유형별 가이드
-        if (error.message.includes('API')) {
-          errorMessage += '💡 해결 방법:\n- Azure OpenAI API 키와 엔드포인트를 확인해주세요\n- 네트워크 연결을 확인해주세요';
+        if (error.message.includes('fetch')) {
+          errorMessage += '💡 해결 방법:\n- 프록시 서버가 실행 중인지 확인해주세요\n- 네트워크 연결을 확인해주세요';
         } else if (error.message.includes('JSON')) {
-          errorMessage += '💡 해결 방법:\n- AI 응답 파싱 오류입니다. 다시 시도해주세요\n- 코드 파일이 너무 클 수 있습니다';
-        } else if (error.message.includes('검색')) {
-          errorMessage += '💡 해결 방법:\n- 보안 문서가 인덱싱되었는지 확인해주세요\n- 1단계에서 문서 업로드를 다시 시도해주세요';
+          errorMessage += '💡 해결 방법:\n- AI 응답 파싱 오류입니다. 다시 시도해주세요\n- 코드 파일이 너무 클 수 있습니다 (파일당 1MB 이하 권장)';
+        } else if (error.message.includes('API')) {
+          errorMessage += '💡 해결 방법:\n- Azure API 키와 엔드포인트를 확인해주세요\n- API 사용량 한도를 확인해주세요';
         } else {
           errorMessage += '💡 해결 방법:\n- 페이지를 새로고침하고 다시 시도해주세요\n- 코드 파일 크기를 줄여보세요';
         }
@@ -321,7 +400,7 @@ const App: React.FC = () => {
     }
   };
 
-  // 커스텀 프롬프트로 재생성 (수정된 버전)
+  // 커스텀 프롬프트로 재생성
   const regenerateWithCustomPrompt = async () => {
     if (!selectedTemplate || !analysisResult) {
       alert('필요한 데이터가 없습니다. 다시 생성해주세요.');
@@ -337,9 +416,7 @@ const App: React.FC = () => {
 
     try {
       console.log('🔄 커스텀 프롬프트로 재생성 시작...');
-      console.log('추가 요구사항:', customPrompt);
-
-      // 기존 보안 규칙을 활용한 향상된 프롬프트 생성
+      
       const enhancedPrompt = `
 다음 정보를 바탕으로 실무에서 사용 가능한 테스트 시나리오를 생성해주세요.
 
@@ -377,20 +454,14 @@ ${customPrompt}
 ]
 `;
 
-      // Azure OpenAI 서비스를 통한 재생성
       const response = await azureOpenAIService.chatCompletion(enhancedPrompt);
-      console.log('커스텀 재생성 원본 응답:', response);
-      
       const cleanedResponse = azureOpenAIService.cleanJsonResponse(response);
-      console.log('커스텀 재생성 정리된 응답:', cleanedResponse);
-      
       const newScenarios = JSON.parse(cleanedResponse);
       
       if (!Array.isArray(newScenarios)) {
         throw new Error('응답이 배열이 아닙니다');
       }
       
-      console.log(`✅ 커스텀 재생성 완료: ${newScenarios.length}개 시나리오`);
       setGeneratedScenarios(newScenarios);
 
       // 마크다운 재생성
@@ -408,7 +479,7 @@ ${customPrompt}
       setMarkdownResult(newMarkdown);
 
       const successMessage = `
-커스텀 재생성이 완료되었습니다! 🎉
+🎉 커스텀 재생성이 완료되었습니다!
 
 📊 재생성 결과:
 - 새로운 테스트 케이스: ${newScenarios.length}개
@@ -430,8 +501,8 @@ ${customPrompt}
         
         if (error.message.includes('JSON')) {
           errorMessage += '💡 해결 방법:\n- 요구사항을 더 구체적으로 작성해보세요\n- 너무 복잡한 요구사항은 단순화해보세요';
-        } else if (error.message.includes('API')) {
-          errorMessage += '💡 해결 방법:\n- 네트워크 연결을 확인해주세요\n- 잠시 후 다시 시도해주세요';
+        } else if (error.message.includes('fetch')) {
+          errorMessage += '💡 해결 방법:\n- 프록시 서버 연결을 확인해주세요\n- 네트워크 연결을 확인해주세요';
         } else {
           errorMessage += '💡 해결 방법:\n- 프롬프트를 수정하고 다시 시도해보세요\n- 페이지를 새로고침해보세요';
         }
@@ -443,10 +514,10 @@ ${customPrompt}
     }
   };
 
-  // 커스텀 프롬프트 초기화
   const resetCustomPrompt = () => {
     setCustomPrompt('');
   };
+
   const downloadMarkdown = () => {
     if (!markdownResult) return;
     
@@ -516,20 +587,53 @@ ${customPrompt}
       <Header currentStep={currentStep} />
       
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* API 설정 경고 */}
-        {!apiConfigValid && (
-          <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-            <div className="flex items-start space-x-2">
-              <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5" />
-              <div>
-                <h3 className="text-sm font-medium text-yellow-800">API 설정 필요</h3>
-                <p className="text-sm text-yellow-700 mt-1">
-                  Azure OpenAI와 Azure AI Search API 키를 .env 파일에 설정해주세요.
-                </p>
+        {/* API 상태 표시 */}
+        <div className="mb-6">
+          {!apiStatus.server ? (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="flex items-start space-x-2">
+                <WifiOff className="w-5 h-5 text-red-600 mt-0.5" />
+                <div>
+                  <h3 className="text-sm font-medium text-red-800">서버 연결 실패</h3>
+                  <p className="text-sm text-red-700 mt-1">{apiStatus.message}</p>
+                  <div className="mt-2">
+                    <button
+                      onClick={checkApiStatus}
+                      className="text-sm text-red-600 hover:text-red-800 underline"
+                    >
+                      다시 시도
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          ) : !apiConfigValid ? (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <div className="flex items-start space-x-2">
+                <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5" />
+                <div>
+                  <h3 className="text-sm font-medium text-yellow-800">API 설정 확인 필요</h3>
+                  <p className="text-sm text-yellow-700 mt-1">{apiStatus.message}</p>
+                  <div className="mt-2 flex space-x-4 text-xs text-yellow-700">
+                    <span>서버: {apiStatus.server ? '✅' : '❌'}</span>
+                    <span>OpenAI: {apiStatus.openai ? '✅' : '❌'}</span>
+                    <span>Search: {apiStatus.search ? '✅' : '❌'}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <div className="flex items-start space-x-2">
+                <Wifi className="w-5 h-5 text-green-600 mt-0.5" />
+                <div>
+                  <h3 className="text-sm font-medium text-green-800">모든 API 연결 정상</h3>
+                  <p className="text-sm text-green-700 mt-1">{apiStatus.message}</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* 단계 표시기 */}
         <StepIndicator 
@@ -540,6 +644,7 @@ ${customPrompt}
 
         {/* 메인 컨텐츠 */}
         <div className="bg-white rounded-lg shadow-sm p-6 lg:p-8">
+          {/* 나머지 단계들은 동일하게 유지... */}
           {/* 1단계: 보안 문서 업로드 */}
           {currentStep === 1 && (
             <div className="space-y-6">

@@ -2,37 +2,64 @@ import type { EmbeddingResponse, ChatCompletionResponse, CodeAnalysisResult, Tem
 import { azureAISearchService } from './azureAISearch.ts';
 
 class AzureOpenAIService {
-  public apiKey: string;
-  public endpoint: string;
-  public apiVersion: string;
   public gptModel: string;
   public embeddingModel: string;
 
   constructor() {
-    this.apiKey = import.meta.env.VITE_AZURE_OPENAI_API_KEY || '';
-    this.endpoint = import.meta.env.VITE_AZURE_OPENAI_ENDPOINT || '';
-    this.apiVersion = import.meta.env.VITE_AZURE_OPENAI_API_VERSION || '2024-02-15-preview';
+    // 클라이언트에서는 모델명만 저장 (API 키는 서버에서 처리)
     this.gptModel = import.meta.env.VITE_CHAT_MODEL_NAME || import.meta.env.VITE_GPT_MODEL_NAME || 'gpt-4o-mini';
     this.embeddingModel = import.meta.env.VITE_EMBEDDING_MODEL_NAME || 'text-embedding-ada-002';
   }
 
-  // 설정 검증
-  public validateConfig(): boolean {
-    return !!(this.apiKey && this.endpoint);
+  // 환경별 프록시 URL 결정
+  private getProxyUrl(): string {
+    if (import.meta.env.DEV) {
+      return 'http://localhost:3001';
+    } else {
+      return '';
+    }
   }
 
-  // 텍스트 임베딩 생성
-  public async generateEmbedding(text: string): Promise<number[]> {
-    const cleanEndpoint = this.endpoint.replace(/\/$/, '');
-    const url = `${cleanEndpoint}/openai/deployments/${this.embeddingModel}/embeddings?api-version=${this.apiVersion}`;
+  // API URL 생성
+  private createApiUrl(endpoint: string): string {
+    const proxyUrl = this.getProxyUrl();
+    const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
     
-    console.log('Embedding URL:', url);
+    if (proxyUrl) {
+      return `${proxyUrl}${normalizedEndpoint}`;
+    } else {
+      return normalizedEndpoint;
+    }
+  }
+
+  // 설정 검증 (프록시 연결 테스트)
+  public async validateConfig(): Promise<boolean> {
+    try {
+      const url = this.createApiUrl('/api/health');
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        return false;
+      }
+      
+      const data = await response.json();
+      return data.environment?.openaiConfigured && data.environment?.searchConfigured;
+    } catch (error) {
+      console.error('설정 검증 오류:', error);
+      return false;
+    }
+  }
+
+  // 텍스트 임베딩 생성 (프록시 통해서)
+  public async generateEmbedding(text: string): Promise<number[]> {
+    const url = this.createApiUrl(`/api/openai/deployments/${this.embeddingModel}/embeddings`);
+    
+    console.log('프록시를 통한 임베딩 생성:', url);
     
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'api-key': this.apiKey,
       },
       body: JSON.stringify({
         input: text,
@@ -42,7 +69,7 @@ class AzureOpenAIService {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Embedding API Error:', response.status, errorText);
+      console.error('임베딩 생성 오류:', response.status, errorText);
       throw new Error(`임베딩 생성 실패: ${response.status} ${response.statusText}\nDetails: ${errorText}`);
     }
 
@@ -87,8 +114,6 @@ class AzureOpenAIService {
     );
 
     const combinedCode = codeContents.join('\n\n');
-    
-    // 토큰 제한을 위해 청크로 나누기
     const maxChunkSize = 6000;
     const chunks = this.splitIntoChunks(combinedCode, maxChunkSize);
     
@@ -144,35 +169,31 @@ ${chunks[i]}
     return this.mergeAnalysisResults(allResults);
   }
 
-  // 코드 분석 기반 보안 규칙 검색 (새로 추가)
+  // 코드 분석 기반 보안 규칙 검색
   public async searchSecurityRules(codeAnalysis: CodeAnalysisResult): Promise<SecurityRule[]> {
     console.log('🔍 코드 분석 결과 기반 보안 규칙 검색 시작...');
     
     try {
-      // 1. 검색 쿼리 생성 (키워드 + 보안 우려사항)
       const searchKeywords = [
         ...codeAnalysis.keywords,
         ...codeAnalysis.securityConcerns,
-        ...codeAnalysis.backendApis.map(api => api.replace(/[{}]/g, '')), // API 경로에서 {} 제거
-        '인증', '권한', '보안', '검증', '접근제어' // 추가 보안 관련 키워드
-      ].filter(keyword => keyword.length > 1); // 너무 짧은 키워드 제외
+        ...codeAnalysis.backendApis.map(api => api.replace(/[{}]/g, '')),
+        '인증', '권한', '보안', '검증', '접근제어'
+      ].filter(keyword => keyword.length > 1);
 
       console.log('검색 키워드:', searchKeywords);
 
-      // 2. 임베딩 생성을 위한 텍스트 구성
       const queryText = [
         '보안 테스트 시나리오 생성을 위한 규칙',
         ...codeAnalysis.securityConcerns,
-        ...searchKeywords.slice(0, 10) // 상위 10개 키워드만
+        ...searchKeywords.slice(0, 10)
       ].join(' ');
 
       console.log('임베딩 생성을 위한 쿼리 텍스트:', queryText);
 
-      // 3. 임베딩 생성
       const queryVector = await this.generateEmbedding(queryText);
       console.log('임베딩 생성 완료, 차원:', queryVector.length);
 
-      // 4. 하이브리드 검색 수행
       const searchResults = await azureAISearchService.searchForCodeAnalysis(
         searchKeywords,
         queryVector
@@ -195,7 +216,6 @@ ${chunks[i]}
   ): Promise<{ scenarios: TestScenario[], securityRules: SecurityRule[] }> {
     console.log('🚀 RAG 기반 테스트 시나리오 생성 시작...');
 
-    // 1. 보안 규칙 검색
     const securityRules = await this.searchSecurityRules(codeAnalysis);
     
     if (securityRules.length === 0) {
@@ -206,7 +226,6 @@ ${chunks[i]}
       };
     }
 
-    // 2. 테스트 시나리오 생성
     const scenarios = await this.generateTestScenarios(template, codeAnalysis, securityRules);
 
     return {
@@ -280,25 +299,20 @@ ${securityRules.map(rule => `### ${rule.title}
       
     } catch (error) {
       console.error('시나리오 생성 결과 파싱 오류:', error);
-      
-      // 기본 시나리오 반환
       return this.generateDefaultScenarios(template);
     }
   }
 
-  // GPT-4 채팅 완성 호출
+  // GPT-4 채팅 완성 호출 (프록시 통해서)
   public async chatCompletion(prompt: string): Promise<string> {
-    const cleanEndpoint = this.endpoint.replace(/\/$/, '');
-    const url = `${cleanEndpoint}/openai/deployments/${this.gptModel}/chat/completions?api-version=${this.apiVersion}`;
+    const url = this.createApiUrl(`/api/openai/deployments/${this.gptModel}/chat/completions`);
     
-    console.log('Chat Completion URL:', url);
-    console.log('Chat Completion Model:', this.gptModel);
+    console.log('프록시를 통한 채팅 완성:', url);
     
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'api-key': this.apiKey,
       },
       body: JSON.stringify({
         messages: [
@@ -318,12 +332,12 @@ ${securityRules.map(rule => `### ${rule.title}
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Chat Completion API Error:', response.status, errorText);
+      console.error('채팅 완성 오류:', response.status, errorText);
       throw new Error(`GPT-4 호출 실패: ${response.status} ${response.statusText}\nDetails: ${errorText}`);
     }
 
     const data: ChatCompletionResponse = await response.json();
-    console.log('Chat Completion Response:', data);
+    console.log('채팅 완성 응답:', data);
     
     return data.choices[0].message.content;
   }

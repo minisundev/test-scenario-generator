@@ -1,23 +1,43 @@
 import type { SearchResult, SecurityRule } from '../types/index.ts';
 
 class AzureAISearchService {
-  private proxyUrl: string;
   private indexName: string;
 
   constructor() {
-    // 프록시 서버 URL 사용
-    this.proxyUrl = 'http://localhost:3001';
     this.indexName = 'security-docs-index';
+  }
+
+  // 환경별 프록시 URL 결정
+  private getProxyUrl(): string {
+    // 개발 환경: localhost:3001 프록시 서버
+    // 배포 환경: 같은 도메인 (상대 경로)
+    if (import.meta.env.DEV) {
+      return 'http://localhost:3001';
+    } else {
+      return ''; // 상대 경로 사용
+    }
+  }
+
+  // API URL 생성
+  private createApiUrl(endpoint: string): string {
+    const proxyUrl = this.getProxyUrl();
+    const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    
+    if (proxyUrl) {
+      return `${proxyUrl}${normalizedEndpoint}`;
+    } else {
+      return normalizedEndpoint; // 상대 경로
+    }
   }
 
   // 설정 검증
   public validateConfig(): boolean {
-    return !!(this.proxyUrl && this.indexName);
+    return !!(this.indexName);
   }
 
   // 검색 인덱스 생성
   public async createIndex(): Promise<void> {
-    const url = `${this.proxyUrl}/api/search/create-index`;
+    const url = this.createApiUrl('/api/search/create-index');
     
     const response = await fetch(url, {
       method: 'POST',
@@ -47,7 +67,7 @@ class AzureAISearchService {
     category: string,
     contentVector: number[]
   ): Promise<void> {
-    const url = `${this.proxyUrl}/api/search/index-document`;
+    const url = this.createApiUrl('/api/search/index-document');
     
     const document = {
       id: id,
@@ -81,7 +101,7 @@ class AzureAISearchService {
     category: string;
     contentVector: number[];
   }>): Promise<void> {
-    const url = `${this.proxyUrl}/api/search/index-documents`;
+    const url = this.createApiUrl('/api/search/index-documents');
     
     const response = await fetch(url, {
       method: 'POST',
@@ -97,13 +117,12 @@ class AzureAISearchService {
     }
   }
 
-  // 텍스트 요약 함수 추가
+  // 텍스트 요약 함수
   private summarizeContent(content: string, maxLength: number = 500): string {
     if (content.length <= maxLength) {
       return content;
     }
     
-    // 중요한 섹션들을 우선적으로 추출
     const importantSections = content.match(/(#### .+?\n[\s\S]*?)(?=####|$)/g) || [];
     
     if (importantSections.length > 0) {
@@ -117,31 +136,28 @@ class AzureAISearchService {
       }
     }
     
-    // fallback: 첫 부분만 자르기
     return content.substring(0, maxLength) + '...';
   }
 
   // 관련성 점수 정규화
   private normalizeRelevanceScore(score: number): number {
-    // Azure Search 점수는 보통 0-4 범위, 이를 0-1로 정규화
     return Math.min(score / 4.0, 1.0);
   }
 
-  // 하이브리드 검색 (키워드 + 벡터) - 수정된 버전
+  // 하이브리드 검색
   public async searchSecurityRules(
     query: string,
     queryVector?: number[],
     top: number = 5
   ): Promise<SecurityRule[]> {
-    const url = `${this.proxyUrl}/api/search/hybrid-search`;
+    const url = this.createApiUrl('/api/search/hybrid-search');
     
     const searchBody = {
       query: query,
       queryVector: queryVector,
       top: top,
-      // 응답에서 content 필드 크기 제한 요청
       select: 'id,title,filename,category',
-      highlight: 'content', // content는 하이라이트로만 받기
+      highlight: 'content',
       highlightPreTag: '<mark>',
       highlightPostTag: '</mark>',
       searchMode: 'any'
@@ -162,19 +178,15 @@ class AzureAISearchService {
 
     const data = await response.json();
     
-    // 검색 결과 후처리
     const processedResults = (data.results || []).map((result: any) => {
-      // 하이라이트된 content가 있으면 그것을 사용, 아니면 원본 요약
       let processedContent = '';
       
       if (result['@search.highlights'] && result['@search.highlights'].content) {
-        // 하이라이트된 부분들을 합쳐서 요약 생성
         processedContent = result['@search.highlights'].content
-          .slice(0, 3) // 상위 3개 하이라이트만
+          .slice(0, 3)
           .join('... ')
           .substring(0, 800) + '...';
       } else if (result.content) {
-        // 하이라이트가 없으면 원본 content 요약
         processedContent = this.summarizeContent(result.content, 800);
       }
       
@@ -192,10 +204,9 @@ class AzureAISearchService {
     return processedResults;
   }
 
-  // 키워드 기반 검색 - 수정된 버전
+  // 키워드 기반 검색
   public async searchByKeywords(keywords: string[]): Promise<SecurityRule[]> {
-    // 키워드를 OR로 연결하되, 더 정확한 검색을 위해 조정
-    const query = keywords.map(k => `"${k}"~2`).join(' OR '); // ~2는 proximity search
+    const query = keywords.map(k => `"${k}"~2`).join(' OR ');
     return this.searchSecurityRules(query);
   }
 
@@ -204,9 +215,9 @@ class AzureAISearchService {
     return this.searchSecurityRules('*', queryVector);
   }
 
-  // 카테고리별 검색 - 수정된 버전
+  // 카테고리별 검색
   public async searchByCategory(category: string, query?: string): Promise<SecurityRule[]> {
-    const url = `${this.proxyUrl}/api/search/category-search`;
+    const url = this.createApiUrl('/api/search/category-search');
     
     const searchBody = {
       category: category,
@@ -232,7 +243,6 @@ class AzureAISearchService {
 
     const data = await response.json();
     
-    // 동일한 후처리 적용
     const processedResults = (data.results || []).map((result: any) => {
       let processedContent = '';
       
@@ -263,7 +273,7 @@ class AzureAISearchService {
     documentCount: number;
     storageSize: number;
   }> {
-    const url = `${this.proxyUrl}/api/search/index-stats`;
+    const url = this.createApiUrl('/api/search/index-stats');
     
     const response = await fetch(url, {
       method: 'GET',
@@ -286,7 +296,7 @@ class AzureAISearchService {
 
   // 인덱스 삭제
   public async deleteIndex(): Promise<void> {
-    const url = `${this.proxyUrl}/api/search/delete-index`;
+    const url = this.createApiUrl('/api/search/delete-index');
     
     const response = await fetch(url, {
       method: 'DELETE',
@@ -308,7 +318,7 @@ class AzureAISearchService {
 
   // 인덱스 존재 여부 확인
   public async indexExists(): Promise<boolean> {
-    const url = `${this.proxyUrl}/api/search/index-exists`;
+    const url = this.createApiUrl('/api/search/index-exists');
     
     try {
       const response = await fetch(url, {
@@ -342,7 +352,6 @@ class AzureAISearchService {
       if (exists) {
         console.log('기존 인덱스 삭제 중...');
         await this.deleteIndex();
-        // 삭제 후 잠시 대기
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
       
@@ -360,7 +369,6 @@ class AzureAISearchService {
     console.log('코드 분석 기반 스마트 검색 시작:', keywords);
     
     try {
-      // 1. 벡터 검색으로 관련 문서 찾기
       let results: SecurityRule[] = [];
       
       if (queryVector && queryVector.length > 0) {
@@ -368,12 +376,10 @@ class AzureAISearchService {
         results = await this.searchByVector(queryVector);
       }
       
-      // 2. 키워드 검색으로 보완
       if (keywords.length > 0) {
         console.log('키워드 검색 수행 중:', keywords);
         const keywordResults = await this.searchByKeywords(keywords);
         
-        // 중복 제거하면서 합치기
         const existingIds = new Set(results.map(r => r.id));
         keywordResults.forEach(result => {
           if (!existingIds.has(result.id)) {
@@ -382,11 +388,10 @@ class AzureAISearchService {
         });
       }
       
-      // 3. 관련성 점수 기준으로 정렬 및 상위 결과만 반환
       results.sort((a, b) => (b.relevance || 0) - (a.relevance || 0));
       
       console.log(`검색 완료: ${results.length}개 결과 반환`);
-      return results.slice(0, 5); // 상위 5개만
+      return results.slice(0, 5);
       
     } catch (error) {
       console.error('스마트 검색 오류:', error);

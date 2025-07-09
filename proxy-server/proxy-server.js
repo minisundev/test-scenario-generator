@@ -1,10 +1,12 @@
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 const fetch = require('node-fetch');
 const path = require('path');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 // CORS 설정
 app.use(cors({
@@ -50,12 +52,15 @@ function normalizeRelevanceScore(score) {
 // Azure OpenAI 프록시
 app.post('/api/openai/*', async (req, res) => {
   try {
-    const path = req.path.replace('/api/openai', '');
-    const url = `${process.env.VITE_AZURE_OPENAI_ENDPOINT}${path}?api-version=${process.env.VITE_AZURE_OPENAI_API_VERSION}`;
+    const relativePath = req.path.replace('/api/openai', '');
     
-    console.log('OpenAI 프록시 요청:', url);
+    // '/openai'를 강제로 붙임 (env 수정 없이)
+    const endpoint = process.env.VITE_AZURE_OPENAI_ENDPOINT.replace(/\/$/, '');
+    const fullOpenAIUrl = `${endpoint}/openai${relativePath}?api-version=${process.env.VITE_AZURE_OPENAI_API_VERSION}`;
     
-    const response = await fetch(url, {
+    console.log('🔁 OpenAI 프록시 요청:', fullOpenAIUrl);
+    
+    const response = await fetch(fullOpenAIUrl, {
       method: req.method,
       headers: {
         'Content-Type': 'application/json',
@@ -65,15 +70,15 @@ app.post('/api/openai/*', async (req, res) => {
     });
 
     const data = await response.json();
-    
+
     if (!response.ok) {
-      console.error('OpenAI API 오류:', response.status, data);
+      console.error('❌ OpenAI API 오류:', response.status, data);
       return res.status(response.status).json(data);
     }
 
     res.json(data);
   } catch (error) {
-    console.error('OpenAI 프록시 오류:', error);
+    console.error('🔥 OpenAI 프록시 오류:', error);
     res.status(500).json({ error: error.message });
   }
 });
