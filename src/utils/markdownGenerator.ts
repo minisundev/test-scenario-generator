@@ -46,6 +46,23 @@ export class MarkdownGenerator {
     return markdown;
   }
 
+  // 안전한 문자열 변환 헬퍼 함수
+  private static safeStringify(value: any): string {
+    if (value === null || value === undefined) {
+      return '';
+    }
+    if (typeof value === 'string') {
+      return value;
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+    if (typeof value === 'object') {
+      return JSON.stringify(value);
+    }
+    return String(value);
+  }
+
   // 헤더 생성
   private static generateHeader(templateName: string, metadata?: any): string {
     const now = new Date();
@@ -118,22 +135,22 @@ export class MarkdownGenerator {
 ### 분석된 코드 특성
 
 #### 🔑 보안 키워드
-${codeAnalysis.keywords.map(keyword => `- \`${keyword}\``).join('\n')}
+${(codeAnalysis.keywords || []).map(keyword => `- \`${this.safeStringify(keyword)}\``).join('\n')}
 
 #### 🎨 UI 구성요소
-${codeAnalysis.uiElements.map(element => `- ${element}`).join('\n')}
+${(codeAnalysis.uiElements || []).map(element => `- ${this.safeStringify(element)}`).join('\n')}
 
 #### 🌐 API 엔드포인트
-${codeAnalysis.backendApis.map(api => `- \`${api}\``).join('\n')}
+${(codeAnalysis.backendApis || []).map(api => `- \`${this.safeStringify(api)}\``).join('\n')}
 
 #### ⚠️ 식별된 보안 관심사항
-${codeAnalysis.securityConcerns.map(concern => `- ${concern}`).join('\n')}
+${(codeAnalysis.securityConcerns || []).map(concern => `- ${this.safeStringify(concern)}`).join('\n')}
 
 #### 🔧 주요 함수
-${codeAnalysis.functions.map(func => `- \`${func}()\``).join('\n')}
+${(codeAnalysis.functions || []).map(func => `- \`${this.safeStringify(func)}()\``).join('\n')}
 
 #### 📦 컴포넌트
-${codeAnalysis.components.map(comp => `- \`${comp}\``).join('\n')}
+${(codeAnalysis.components || []).map(comp => `- \`${this.safeStringify(comp)}\``).join('\n')}
 
 ---
 
@@ -193,8 +210,9 @@ ${rule.content}
     scenarios.forEach(scenario => {
       const row = template.columns.map(col => {
         const value = scenario[col.name] || '';
+        const safeValue = this.safeStringify(value);
         // 마크다운 특수문자 이스케이프
-        return value.replace(/\|/g, '\\|').replace(/\n/g, '<br>');
+        return safeValue.replace(/\|/g, '\\|').replace(/\n/g, '<br>');
       });
       section += '| ' + row.join(' | ') + ' |\n';
     });
@@ -307,7 +325,8 @@ ${Object.entries(securityStats).map(([key, count]) => `- ${key}: ${count}개`).j
     
     scenarios.forEach(scenario => {
       const value = scenario[columnName] || '미분류';
-      stats[value] = (stats[value] || 0) + 1;
+      const safeValue = this.safeStringify(value);
+      stats[safeValue] = (stats[safeValue] || 0) + 1;
     });
     
     return stats;
@@ -319,7 +338,10 @@ ${Object.entries(securityStats).map(([key, count]) => `- ${key}: ${count}개`).j
     
     const totalLength = scenarios.reduce((sum, scenario) => {
       const scenarioText = template.columns
-        .map(col => scenario[col.name] || '')
+        .map(col => {
+          const value = scenario[col.name] || '';
+          return this.safeStringify(value);
+        })
         .join(' ');
       return sum + scenarioText.length;
     }, 0);
@@ -354,7 +376,8 @@ ${Object.entries(securityStats).map(([key, count]) => `- ${key}: ${count}개`).j
     scenarios.forEach(scenario => {
       const row = template.columns.map(col => {
         const value = scenario[col.name] || '';
-        return value.replace(/\|/g, '\\|').replace(/\n/g, ' ');
+        const safeValue = this.safeStringify(value);
+        return safeValue.replace(/\|/g, '\\|').replace(/\n/g, ' ');
       });
       markdown += '| ' + row.join(' | ') + ' |\n';
     });
@@ -372,8 +395,9 @@ ${Object.entries(securityStats).map(([key, count]) => `- ${key}: ${count}개`).j
     scenarios.forEach(scenario => {
       const row = template.columns.map(col => {
         const value = scenario[col.name] || '';
+        const safeValue = this.safeStringify(value);
         // CSV에서 따옴표 이스케이프
-        return `"${value.replace(/"/g, '""')}"`;
+        return `"${safeValue.replace(/"/g, '""')}"`;
       });
       csv += row.join(',') + '\n';
     });

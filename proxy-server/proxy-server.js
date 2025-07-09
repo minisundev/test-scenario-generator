@@ -14,6 +14,36 @@ app.use(cors({
 
 app.use(express.json({ limit: '50mb' }));
 
+// 텍스트 요약 함수
+function summarizeContent(content, maxLength = 500) {
+  if (!content || content.length <= maxLength) {
+    return content || '';
+  }
+  
+  // 중요한 섹션들을 우선적으로 추출 (#### 헤더 기준)
+  const importantSections = content.match(/(#### .+?\n[\s\S]*?)(?=####|$)/g) || [];
+  
+  if (importantSections.length > 0) {
+    let summary = '';
+    for (const section of importantSections) {
+      if (summary.length + section.length > maxLength) break;
+      summary += section + '\n\n';
+    }
+    if (summary.length > 0) {
+      return summary.trim();
+    }
+  }
+  
+  // fallback: 첫 부분만 자르기
+  return content.substring(0, maxLength) + '...';
+}
+
+// 관련성 점수 정규화
+function normalizeRelevanceScore(score) {
+  // Azure Search 점수는 보통 0-4 범위, 이를 0-1로 정규화
+  return Math.min((score || 0) / 4.0, 1.0);
+}
+
 // Azure OpenAI 프록시
 app.post('/api/openai/*', async (req, res) => {
   try {
@@ -240,24 +270,41 @@ app.post('/api/search/index-documents', async (req, res) => {
   }
 });
 
-// 하이브리드 검색
+// 하이브리드 검색 (수정됨)
 app.post('/api/search/hybrid-search', async (req, res) => {
   try {
-    const { query, queryVector, top = 5 } = req.body;
+    const { 
+      query, 
+      queryVector, 
+      top = 5, 
+      select,
+      highlight,
+      highlightPreTag = '<mark>',
+      highlightPostTag = '</mark>',
+      searchMode = 'any'
+    } = req.body;
+    
     const indexName = 'security-docs-index';
     const url = `${process.env.VITE_AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/search?api-version=2023-11-01`;
     
     const searchBody = {
-      search: query,
+      search: query || '*',
       top: top,
-      select: 'id,title,content,category',
-      searchMode: 'all',
+      select: select || 'id,title,filename,category', // content 제외
+      searchMode: searchMode,
       queryType: 'full',
       searchFields: 'title,content,category'
     };
 
+    // 하이라이트 설정 추가
+    if (highlight) {
+      searchBody.highlight = highlight;
+      searchBody.highlightPreTag = highlightPreTag;
+      searchBody.highlightPostTag = highlightPostTag;
+    }
+
     // 벡터 검색 추가 (하이브리드 검색)
-    if (queryVector) {
+    if (queryVector && queryVector.length > 0) {
       searchBody.vectors = [
         {
           value: queryVector,
@@ -268,6 +315,7 @@ app.post('/api/search/hybrid-search', async (req, res) => {
     }
     
     console.log('하이브리드 검색 요청:', url);
+    console.log('검색 본문:', JSON.stringify(searchBody, null, 2));
     
     const response = await fetch(url, {
       method: 'POST',
@@ -285,15 +333,36 @@ app.post('/api/search/hybrid-search', async (req, res) => {
     }
 
     const data = await response.json();
+    console.log('Azure Search 응답:', JSON.stringify(data, null, 2));
     
-    const results = data.value.map((item, index) => ({
-      id: item['@search.score']?.toString() || index.toString(),
-      title: item.title || '제목 없음',
-      content: item.content || '',
-      category: item.category || '일반',
-      relevance: item['@search.score'] || 0
-    }));
+    // 결과 후처리 - content 요약 및 하이라이트 처리
+    const results = data.value.map((item, index) => {
+      let processedContent = '';
+      
+      // 하이라이트된 content가 있으면 그것을 사용
+      if (item['@search.highlights'] && item['@search.highlights'].content) {
+        processedContent = item['@search.highlights'].content
+          .slice(0, 3) // 상위 3개 하이라이트만
+          .join('... ')
+          .substring(0, 800) + '...';
+      } else if (item.content) {
+        // 하이라이트가 없으면 원본 content 요약
+        processedContent = summarizeContent(item.content, 800);
+      }
+      
+      return {
+        id: item.id || `result_${index}`,
+        title: item.title || '제목 없음',
+        content: processedContent,
+        filename: item.filename || '',
+        category: item.category || '일반',
+        relevance: normalizeRelevanceScore(item['@search.score']),
+        '@search.score': item['@search.score'],
+        '@search.highlights': item['@search.highlights']
+      };
+    });
 
+    console.log(`검색 결과 후처리 완료: ${results.length}개`);
     res.json({ results });
   } catch (error) {
     console.error('하이브리드 검색 프록시 오류:', error);
@@ -301,10 +370,18 @@ app.post('/api/search/hybrid-search', async (req, res) => {
   }
 });
 
-// 카테고리별 검색
+// 카테고리별 검색 (수정됨)
 app.post('/api/search/category-search', async (req, res) => {
   try {
-    const { category, query = '*' } = req.body;
+    const { 
+      category, 
+      query = '*',
+      select,
+      highlight,
+      highlightPreTag = '<mark>',
+      highlightPostTag = '</mark>'
+    } = req.body;
+    
     const indexName = 'security-docs-index';
     const url = `${process.env.VITE_AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/search?api-version=2023-11-01`;
     
@@ -312,8 +389,15 @@ app.post('/api/search/category-search', async (req, res) => {
       search: query,
       filter: `category eq '${category}'`,
       top: 10,
-      select: 'id,title,content,category'
+      select: select || 'id,title,filename,category' // content 제외
     };
+    
+    // 하이라이트 설정 추가
+    if (highlight) {
+      searchBody.highlight = highlight;
+      searchBody.highlightPreTag = highlightPreTag;
+      searchBody.highlightPostTag = highlightPostTag;
+    }
     
     console.log('카테고리별 검색 요청:', url);
     
@@ -334,13 +418,30 @@ app.post('/api/search/category-search', async (req, res) => {
 
     const data = await response.json();
     
-    const results = data.value.map((item, index) => ({
-      id: item['@search.score']?.toString() || index.toString(),
-      title: item.title || '제목 없음',
-      content: item.content || '',
-      category: item.category || '일반',
-      relevance: item['@search.score'] || 0
-    }));
+    // 결과 후처리 - 동일한 로직 적용
+    const results = data.value.map((item, index) => {
+      let processedContent = '';
+      
+      if (item['@search.highlights'] && item['@search.highlights'].content) {
+        processedContent = item['@search.highlights'].content
+          .slice(0, 3)
+          .join('... ')
+          .substring(0, 800) + '...';
+      } else if (item.content) {
+        processedContent = summarizeContent(item.content, 800);
+      }
+      
+      return {
+        id: item.id || `category_result_${index}`,
+        title: item.title || '제목 없음',
+        content: processedContent,
+        filename: item.filename || '',
+        category: item.category || '일반',
+        relevance: normalizeRelevanceScore(item['@search.score']),
+        '@search.score': item['@search.score'],
+        '@search.highlights': item['@search.highlights']
+      };
+    });
 
     res.json({ results });
   } catch (error) {
