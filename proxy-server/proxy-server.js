@@ -49,19 +49,20 @@ function normalizeRelevanceScore(score) {
   return Math.min((score || 0) / 4.0, 1.0);
 }
 
-// Azure OpenAI 프록시
-app.post('/api/openai/*', async (req, res) => {
+// === 방법 1: 구체적인 OpenAI 엔드포인트들 ===
+
+// Embeddings API
+app.post('/api/openai/deployments/:deploymentName/embeddings', async (req, res) => {
   try {
-    const relativePath = req.path.replace('/api/openai', '');
-    
-    // '/openai'를 강제로 붙임 (env 수정 없이)
+    const { deploymentName } = req.params;
     const endpoint = process.env.AZURE_OPENAI_ENDPOINT.replace(/\/$/, '');
-    const fullOpenAIUrl = `${endpoint}/openai${relativePath}?api-version=${process.env.AZURE_OPENAI_API_VERSION}`;
+    const fullOpenAIUrl = `${endpoint}/openai/deployments/${deploymentName}/embeddings?api-version=${process.env.AZURE_OPENAI_API_VERSION}`;
     
-    console.log('🔁 OpenAI 프록시 요청:', fullOpenAIUrl);
+    console.log('🔁 OpenAI Embeddings 프록시 요청:', fullOpenAIUrl);
+    console.log('요청 본문:', JSON.stringify(req.body, null, 2));
     
     const response = await fetch(fullOpenAIUrl, {
-      method: req.method,
+      method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'api-key': process.env.AZURE_OPENAI_API_KEY,
@@ -72,18 +73,177 @@ app.post('/api/openai/*', async (req, res) => {
     const data = await response.json();
 
     if (!response.ok) {
-      console.error('❌ OpenAI API 오류:', response.status, data);
+      console.error('❌ OpenAI Embeddings API 오류:', {
+        status: response.status,
+        statusText: response.statusText,
+        url: fullOpenAIUrl,
+        error: data
+      });
       return res.status(response.status).json(data);
     }
 
+    console.log('✅ OpenAI Embeddings API 성공:', {
+      status: response.status,
+      embeddingLength: data.data?.[0]?.embedding?.length
+    });
+
     res.json(data);
   } catch (error) {
-    console.error('🔥 OpenAI 프록시 오류:', error);
+    console.error('🔥 OpenAI Embeddings 프록시 오류:', {
+      error: error.message,
+      stack: error.stack
+    });
     res.status(500).json({ error: error.message });
   }
 });
 
-// === 새로운 Azure AI Search 엔드포인트 ===
+// Chat Completions API  
+app.post('/api/openai/deployments/:deploymentName/chat/completions', async (req, res) => {
+  try {
+    const { deploymentName } = req.params;
+    const endpoint = process.env.AZURE_OPENAI_ENDPOINT.replace(/\/$/, '');
+    const fullOpenAIUrl = `${endpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=${process.env.AZURE_OPENAI_API_VERSION}`;
+    
+    console.log('🔁 OpenAI Chat Completions 프록시 요청:', fullOpenAIUrl);
+    console.log('요청 본문:', JSON.stringify(req.body, null, 2));
+    
+    const response = await fetch(fullOpenAIUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': process.env.AZURE_OPENAI_API_KEY,
+      },
+      body: JSON.stringify(req.body),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error('❌ OpenAI Chat Completions API 오류:', {
+        status: response.status,
+        statusText: response.statusText,
+        url: fullOpenAIUrl,
+        error: data
+      });
+      return res.status(response.status).json(data);
+    }
+
+    console.log('✅ OpenAI Chat Completions API 성공:', {
+      status: response.status,
+      responseLength: data.choices?.[0]?.message?.content?.length
+    });
+
+    res.json(data);
+  } catch (error) {
+    console.error('🔥 OpenAI Chat Completions 프록시 오류:', {
+      error: error.message,
+      stack: error.stack
+    });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Completions API (레거시)
+app.post('/api/openai/deployments/:deploymentName/completions', async (req, res) => {
+  try {
+    const { deploymentName } = req.params;
+    const endpoint = process.env.AZURE_OPENAI_ENDPOINT.replace(/\/$/, '');
+    const fullOpenAIUrl = `${endpoint}/openai/deployments/${deploymentName}/completions?api-version=${process.env.AZURE_OPENAI_API_VERSION}`;
+    
+    console.log('🔁 OpenAI Completions 프록시 요청:', fullOpenAIUrl);
+    console.log('요청 본문:', JSON.stringify(req.body, null, 2));
+    
+    const response = await fetch(fullOpenAIUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': process.env.AZURE_OPENAI_API_KEY,
+      },
+      body: JSON.stringify(req.body),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error('❌ OpenAI Completions API 오류:', {
+        status: response.status,
+        statusText: response.statusText,
+        url: fullOpenAIUrl,
+        error: data
+      });
+      return res.status(response.status).json(data);
+    }
+
+    console.log('✅ OpenAI Completions API 성공:', {
+      status: response.status,
+      responseLength: data.choices?.[0]?.text?.length
+    });
+
+    res.json(data);
+  } catch (error) {
+    console.error('🔥 OpenAI Completions 프록시 오류:', {
+      error: error.message,
+      stack: error.stack
+    });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// === 방법 2: 만능 라우팅 (fallback) ===
+// 위의 구체적인 라우팅으로 처리되지 않은 다른 OpenAI API 경로들을 처리
+app.use('/api/openai', async (req, res) => {
+  try {
+    const relativePath = req.originalUrl.replace('/api/openai', '');
+    
+    // '/openai'를 강제로 붙임 (env 수정 없이)
+    const endpoint = process.env.AZURE_OPENAI_ENDPOINT.replace(/\/$/, '');
+    const fullOpenAIUrl = `${endpoint}/openai${relativePath}?api-version=${process.env.AZURE_OPENAI_API_VERSION}`;
+    
+    console.log('🔁 OpenAI 일반 프록시 요청:', {
+      method: req.method,
+      originalUrl: req.originalUrl,
+      relativePath: relativePath,
+      fullUrl: fullOpenAIUrl
+    });
+    
+    const response = await fetch(fullOpenAIUrl, {
+      method: req.method,
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': process.env.AZURE_OPENAI_API_KEY,
+      },
+      body: req.method !== 'GET' ? JSON.stringify(req.body) : undefined,
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error('❌ OpenAI 일반 API 오류:', {
+        status: response.status,
+        statusText: response.statusText,
+        url: fullOpenAIUrl,
+        error: data
+      });
+      return res.status(response.status).json(data);
+    }
+
+    console.log('✅ OpenAI 일반 API 성공:', {
+      status: response.status,
+      url: fullOpenAIUrl
+    });
+
+    res.json(data);
+  } catch (error) {
+    console.error('🔥 OpenAI 일반 프록시 오류:', {
+      error: error.message,
+      stack: error.stack,
+      url: req.originalUrl
+    });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// === Azure AI Search 엔드포인트 ===
 
 // 인덱스 생성
 app.post('/api/search/create-index', async (req, res) => {
@@ -278,7 +438,7 @@ app.post('/api/search/index-documents', async (req, res) => {
   }
 });
 
-// 하이브리드 검색 (수정됨)
+// 하이브리드 검색
 app.post('/api/search/hybrid-search', async (req, res) => {
   try {
     const { 
@@ -298,7 +458,7 @@ app.post('/api/search/hybrid-search', async (req, res) => {
     const searchBody = {
       search: query || '*',
       top: top,
-      select: select || 'id,title,filename,category', // content 제외
+      select: select || 'id,title,filename,category',
       searchMode: searchMode,
       queryType: 'full',
       searchFields: 'title,content,category'
@@ -378,7 +538,7 @@ app.post('/api/search/hybrid-search', async (req, res) => {
   }
 });
 
-// 카테고리별 검색 (수정됨)
+// 카테고리별 검색
 app.post('/api/search/category-search', async (req, res) => {
   try {
     const { 
@@ -397,7 +557,7 @@ app.post('/api/search/category-search', async (req, res) => {
       search: query,
       filter: `category eq '${category}'`,
       top: 10,
-      select: select || 'id,title,filename,category' // content 제외
+      select: select || 'id,title,filename,category'
     };
     
     // 하이라이트 설정 추가
@@ -677,6 +837,11 @@ app.get('/api/health', (req, res) => {
 
 // 404 처리
 app.use('*', (req, res) => {
+  console.log('❌ 404 Not Found:', {
+    method: req.method,
+    url: req.originalUrl,
+    headers: req.headers
+  });
   res.status(404).json({ error: 'Not found' });
 });
 
@@ -685,4 +850,9 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🔧 환경변수 상태:`);
   console.log(`   - OpenAI API: ${process.env.AZURE_OPENAI_API_KEY ? '✅ 설정됨' : '❌ 미설정'}`);
   console.log(`   - Search API: ${process.env.AZURE_SEARCH_API_KEY ? '✅ 설정됨' : '❌ 미설정'}`);
+  console.log(`🎯 지원하는 OpenAI 엔드포인트:`);
+  console.log(`   - POST /api/openai/deployments/:deploymentName/embeddings`);
+  console.log(`   - POST /api/openai/deployments/:deploymentName/chat/completions`);
+  console.log(`   - POST /api/openai/deployments/:deploymentName/completions`);
+  console.log(`   - 기타 OpenAI API (fallback 라우팅)`);
 });
