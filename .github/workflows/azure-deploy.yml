@@ -35,6 +35,24 @@ jobs:
           docker build . -t ${{ env.REGISTRY_LOGIN_SERVER }}/test-scenario-generator:latest
           docker push ${{ env.REGISTRY_LOGIN_SERVER }}/test-scenario-generator:latest
 
+      - name: 'Set Azure App Service Environment Variables'
+        run: |
+          az webapp config appsettings set \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --settings \
+              VITE_AZURE_OPENAI_API_KEY="${{ secrets.VITE_AZURE_OPENAI_API_KEY }}" \
+              VITE_AZURE_OPENAI_ENDPOINT="${{ secrets.VITE_AZURE_OPENAI_ENDPOINT }}" \
+              VITE_AZURE_OPENAI_API_VERSION="${{ secrets.VITE_AZURE_OPENAI_API_VERSION }}" \
+              VITE_AZURE_SEARCH_API_KEY="${{ secrets.VITE_AZURE_SEARCH_API_KEY }}" \
+              VITE_AZURE_SEARCH_ENDPOINT="${{ secrets.VITE_AZURE_SEARCH_ENDPOINT }}" \
+              VITE_AZURE_SEARCH_INDEX_NAME="${{ secrets.VITE_AZURE_SEARCH_INDEX_NAME }}" \
+              VITE_GPT_MODEL_NAME="${{ secrets.VITE_GPT_MODEL_NAME }}" \
+              VITE_EMBEDDING_MODEL_NAME="${{ secrets.VITE_EMBEDDING_MODEL_NAME }}" \
+              VITE_MAX_FILE_SIZE="${{ secrets.VITE_MAX_FILE_SIZE }}" \
+              VITE_SUPPORTED_CODE_EXTENSIONS="${{ secrets.VITE_SUPPORTED_CODE_EXTENSIONS }}" \
+              VITE_USE_PROXY="${{ secrets.VITE_USE_PROXY }}"
+
       - name: 'Deploy to Azure Web App'
         uses: azure/webapps-deploy@v2
         with:
