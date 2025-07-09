@@ -9,7 +9,11 @@ const PORT = process.env.PORT || 3001;
 
 // CORS 설정
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
+  origin: [
+    'http://localhost:3000', 
+    'http://127.0.0.1:3000',
+    'https://dopaminesun-web-app-hxd2dab2d2hwa0d0.eastus2-01.azurewebsites.net'
+  ],
   credentials: true
 }));
 
