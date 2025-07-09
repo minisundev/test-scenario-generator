@@ -51,16 +51,8 @@ const App: React.FC = () => {
   const [apiConfigValid, setApiConfigValid] = useState(false);
 
   useEffect(() => {
-    // 프록시 사용 시 API 설정이 유효하다고 간주
-    const useProxy = import.meta.env.VITE_USE_PROXY === 'true';
-    const openAIValid = azureOpenAIService.validateConfig();
-    
-    // 프록시를 사용하거나 OpenAI 설정이 유효한 경우
-    setApiConfigValid(useProxy || openAIValid);
-
-    if (!useProxy && !openAIValid) {
-      console.warn('Azure OpenAI API 설정이 필요합니다. .env 파일을 확인하세요.');
-    }
+    // 그냥 항상 활성화 (배포 환경에서는 프록시 서버가 API 키를 처리)
+    setApiConfigValid(true);
   }, []);
 
   // 1단계: 보안 문서 처리
