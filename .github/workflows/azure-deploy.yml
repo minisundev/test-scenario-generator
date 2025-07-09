@@ -1,4 +1,3 @@
-
 name: Deploy to Azure Web App
 
 on:
@@ -16,28 +15,28 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: 'Checkout GitHub Action'
-      uses: actions/checkout@v4
+      - name: 'Checkout GitHub Action'
+        uses: actions/checkout@v4
 
-    - name: 'Login to Azure'
-      uses: azure/login@v1
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: 'Login to Azure'
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    - name: 'Login to Container Registry'
-      uses: azure/docker-login@v1
-      with:
-        login-server: ${{ env.REGISTRY_LOGIN_SERVER }}
-        username: ${{ secrets.REGISTRY_USERNAME }}
-        password: ${{ secrets.REGISTRY_PASSWORD }}
+      - name: 'Login to Container Registry'
+        uses: azure/docker-login@v1
+        with:
+          login-server: ${{ env.REGISTRY_LOGIN_SERVER }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
 
-    - name: 'Build and push Docker image'
-      run: |
-        docker build . -t ${{ env.REGISTRY_LOGIN_SERVER }}/test-scenario-generator:${{ github.sha }}
-        docker push ${{ env.REGISTRY_LOGIN_SERVER }}/test-scenario-generator:${{ github.sha }}
+      - name: 'Build and push Docker image (latest tag)'
+        run: |
+          docker build . -t ${{ env.REGISTRY_LOGIN_SERVER }}/test-scenario-generator:latest
+          docker push ${{ env.REGISTRY_LOGIN_SERVER }}/test-scenario-generator:latest
 
-    - name: 'Deploy to Azure Web App'
-      uses: azure/webapps-deploy@v2
-      with:
-        app-name: ${{ env.AZURE_WEBAPP_NAME }}
-        images: ${{ env.REGISTRY_LOGIN_SERVER }}/test-scenario-generator:${{ github.sha }}
+      - name: 'Deploy to Azure Web App'
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          images: ${{ env.REGISTRY_LOGIN_SERVER }}/test-scenario-generator:latest
