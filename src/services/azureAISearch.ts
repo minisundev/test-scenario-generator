@@ -31,6 +31,99 @@ class AzureAISearchService {
     return !!(this.indexName);
   }
 
+  // 인덱스 상태 확인
+  public async getIndexStatus(): Promise<{
+    exists: boolean;
+    documentCount: number;
+    embeddingCount: number;
+    indexSize: number;
+    lastUpdate: string | null;
+  }> {
+    const url = this.createApiUrl('/api/search/index/status');
+    
+    try {
+      console.log('📊 인덱스 상태 확인 요청:', url);
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('인덱스 상태 확인 실패:', response.status, errorText);
+        throw new Error(`인덱스 상태 확인 실패: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ 인덱스 상태 확인 성공:', data);
+      
+      return {
+        exists: data.exists || false,
+        documentCount: data.documentCount || 0,
+        embeddingCount: data.embeddingCount || 0,
+        indexSize: data.indexSize || 0,
+        lastUpdate: data.lastUpdate || null
+      };
+
+    } catch (error) {
+      console.error('❌ 인덱스 상태 확인 오류:', error);
+      // 실패 시 기본값 반환
+      return {
+        exists: false,
+        documentCount: 0,
+        embeddingCount: 0,
+        indexSize: 0,
+        lastUpdate: null
+      };
+    }
+  }
+
+  // 인덱스 완전 초기화 (replace 모드용)
+  public async clearIndex(): Promise<void> {
+    const url = this.createApiUrl('/api/search/index/clear');
+    
+    console.log('🗑️ 인덱스 완전 초기화 요청:', url);
+    
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('인덱스 초기화 실패:', response.status, errorText);
+      throw new Error(`인덱스 초기화 실패: ${response.status} ${response.statusText}\nDetails: ${errorText}`);
+    }
+
+    console.log('✅ 인덱스 완전 초기화 완료');
+  }
+
+  // 수정된 인덱스 재생성 (replace/append 모드 지원)
+  public async recreateIndexWithCORS(mode: 'replace' | 'append' = 'replace'): Promise<void> {
+    try {
+      if (mode === 'replace') {
+        console.log('🔄 Replace 모드: 기존 인덱스 완전 교체');
+        await this.clearIndex();
+      } else {
+        console.log('➕ Append 모드: 기존 인덱스 유지');
+        // Append 모드에서는 인덱스가 없으면 생성만 함
+        const status = await this.getIndexStatus();
+        if (!status.exists) {
+          console.log('ℹ️ 기존 인덱스가 없어 새로 생성합니다');
+          await this.createIndex();
+        }
+      }
+    } catch (error) {
+      console.error('인덱스 재생성 오류:', error);
+      throw error;
+    }
+  }
+
   // 검색 인덱스 생성
   public async createIndex(): Promise<void> {
     const url = this.createApiUrl('/api/search/create-index');
@@ -54,7 +147,7 @@ class AzureAISearchService {
     console.log('인덱스가 생성되었습니다!');
   }
 
-  // 문서 인덱싱
+  // 🔄 수정된 문서 인덱싱 (타임스탬프 자동 추가)
   public async indexDocument(
     id: string,
     title: string,
@@ -72,6 +165,7 @@ class AzureAISearchService {
       filename: filename,
       category: category,
       contentVector: contentVector
+      // timestamp는 백엔드에서 자동 추가됨
     };
 
     const response = await fetch(url, {
@@ -86,6 +180,8 @@ class AzureAISearchService {
       const errorText = await response.text();
       throw new Error(`문서 인덱싱 실패: ${response.status} ${response.statusText}\nDetails: ${errorText}`);
     }
+
+    console.log(`✅ 문서 인덱싱 완료: ${title}`);
   }
 
   // 배치 문서 인덱싱
@@ -111,6 +207,8 @@ class AzureAISearchService {
       const errorText = await response.text();
       throw new Error(`배치 인덱싱 실패: ${response.status} ${response.statusText}\nDetails: ${errorText}`);
     }
+
+    console.log(`✅ 배치 인덱싱 완료: ${documents.length}개 문서`);
   }
 
   // 텍스트 요약 함수
@@ -264,7 +362,7 @@ class AzureAISearchService {
     return processedResults;
   }
 
-  // 인덱스 상태 확인
+  // 인덱스 상태 확인 (기존 메서드 유지 - 호환성)
   public async getIndexStats(): Promise<{
     documentCount: number;
     storageSize: number;
@@ -339,27 +437,6 @@ class AzureAISearchService {
     }
   }
 
-  // 인덱스 재생성
-  public async recreateIndexWithCORS(): Promise<void> {
-    try {
-      console.log('기존 인덱스 확인 중...');
-      const exists = await this.indexExists();
-      
-      if (exists) {
-        console.log('기존 인덱스 삭제 중...');
-        await this.deleteIndex();
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
-      
-      console.log('새 인덱스 생성 중...');
-      await this.createIndex();
-      
-    } catch (error) {
-      console.error('인덱스 재생성 오류:', error);
-      throw error;
-    }
-  }
-
   // 스마트 검색 (코드 분석 결과 기반)
   public async searchForCodeAnalysis(keywords: string[], queryVector?: number[]): Promise<SecurityRule[]> {
     console.log('코드 분석 기반 스마트 검색 시작:', keywords);
@@ -393,6 +470,18 @@ class AzureAISearchService {
       console.error('스마트 검색 오류:', error);
       return [];
     }
+  }
+
+  // 🆕 인덱스 상태 새로고침 (UI에서 수동 호출용)
+  public async refreshIndexStatus(): Promise<{
+    exists: boolean;
+    documentCount: number;
+    embeddingCount: number;
+    indexSize: number;
+    lastUpdate: string | null;
+  }> {
+    console.log('🔄 인덱스 상태 새로고침');
+    return await this.getIndexStatus();
   }
 }
 

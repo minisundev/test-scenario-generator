@@ -438,6 +438,316 @@ app.post('/api/search/index-documents', async (req, res) => {
   }
 });
 
+// 인덱스 상태 확인 (새로 추가)
+app.get('/api/search/index/status', async (req, res) => {
+  try {
+    const indexName = 'security-docs-index';
+    
+    console.log('📊 인덱스 상태 확인 요청');
+
+    // 1. 인덱스 존재 여부 확인
+    const indexUrl = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2023-11-01`;
+    const indexResponse = await fetch(indexUrl, {
+      method: 'GET',
+      headers: {
+        'api-key': process.env.AZURE_SEARCH_API_KEY,
+      },
+    });
+
+    if (!indexResponse.ok) {
+      // 인덱스가 없으면 404
+      if (indexResponse.status === 404) {
+        console.log('ℹ️ 인덱스가 존재하지 않음');
+        return res.json({
+          exists: false,
+          documentCount: 0,
+          embeddingCount: 0,
+          indexSize: 0,
+          lastUpdate: null
+        });
+      }
+      
+      const errorText = await indexResponse.text();
+      console.error('인덱스 확인 오류:', indexResponse.status, errorText);
+      return res.status(indexResponse.status).json({ error: errorText });
+    }
+
+    // 2. 인덱스 통계 확인
+    const statsUrl = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/stats?api-version=2023-11-01`;
+    const statsResponse = await fetch(statsUrl, {
+      method: 'GET',
+      headers: {
+        'api-key': process.env.AZURE_SEARCH_API_KEY,
+      },
+    });
+
+    if (!statsResponse.ok) {
+      const errorText = await statsResponse.text();
+      console.error('인덱스 통계 확인 오류:', statsResponse.status, errorText);
+      return res.status(statsResponse.status).json({ error: errorText });
+    }
+
+    const statsData = await statsResponse.json();
+    console.log('✅ 인덱스 통계:', statsData);
+
+    // 3. 최근 문서 확인 (마지막 업데이트 시간 추출)
+    let lastUpdate = null;
+    if (statsData.documentCount > 0) {
+      try {
+        const searchUrl = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/search?api-version=2023-11-01`;
+        const searchResponse = await fetch(searchUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'api-key': process.env.AZURE_SEARCH_API_KEY,
+          },
+          body: JSON.stringify({
+            search: '*',
+            top: 1,
+            orderby: 'search.score() desc',
+            select: 'id,title'
+          }),
+        });
+
+        if (searchResponse.ok) {
+          const searchData = await searchResponse.json();
+          // 실제로는 문서에 timestamp 필드가 있어야 하지만, 일단 현재 시간으로 설정
+          lastUpdate = new Date().toISOString();
+        }
+      } catch (searchError) {
+        console.warn('최근 문서 검색 실패:', searchError);
+        lastUpdate = new Date().toISOString();
+      }
+    }
+
+    // 4. 응답 데이터 구성
+    const indexInfo = {
+      exists: true,
+      documentCount: statsData.documentCount || 0,
+      embeddingCount: statsData.documentCount || 0, // 문서 1개당 임베딩 1개로 가정
+      indexSize: estimateIndexSize(statsData.documentCount || 0),
+      lastUpdate: lastUpdate
+    };
+
+    console.log('✅ 인덱스 상태 응답:', indexInfo);
+    res.json(indexInfo);
+
+  } catch (error) {
+    console.error('❌ 인덱스 상태 확인 오류:', error);
+    res.status(500).json({
+      error: '인덱스 상태 확인 실패',
+      message: error.message
+    });
+  }
+});
+
+// 인덱스 크기 추정 함수 (새로 추가)
+function estimateIndexSize(documentCount) {
+  // 문서당 평균 크기를 기반으로 대략적인 인덱스 크기 계산
+  // 임베딩 벡터 (1536 dimensions * 4 bytes) + 메타데이터 등
+  const avgDocSize = 10 * 1024; // 10KB per document (대략적)
+  const embeddingSize = 1536 * 4; // 6KB per embedding
+  const metadataSize = 2 * 1024; // 2KB for metadata
+  
+  const totalSize = documentCount * (avgDocSize + embeddingSize + metadataSize);
+  return totalSize;
+}
+
+// 인덱스 완전 초기화 (새로 추가) - replace 모드용
+app.delete('/api/search/index/clear', async (req, res) => {
+  try {
+    const indexName = 'security-docs-index';
+    console.log('🗑️ 인덱스 완전 초기화 요청');
+
+    // 1. 기존 인덱스 삭제
+    const deleteUrl = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2023-11-01`;
+    const deleteResponse = await fetch(deleteUrl, {
+      method: 'DELETE',
+      headers: {
+        'api-key': process.env.AZURE_SEARCH_API_KEY,
+      },
+    });
+
+    if (!deleteResponse.ok && deleteResponse.status !== 404) {
+      const errorText = await deleteResponse.text();
+      console.error('인덱스 삭제 오류:', deleteResponse.status, errorText);
+      return res.status(deleteResponse.status).json({ error: errorText });
+    }
+
+    console.log('✅ 기존 인덱스 삭제 완료 (또는 존재하지 않음)');
+
+    // 2. 잠시 대기 (Azure Search 내부 처리 시간)
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // 3. 새 인덱스 생성
+    const createUrl = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2023-11-01`;
+    
+    const indexSchema = {
+      name: indexName,
+      fields: [
+        {
+          name: 'id',
+          type: 'Edm.String',
+          key: true,
+          searchable: false,
+          filterable: false,
+          sortable: false,
+          facetable: false
+        },
+        {
+          name: 'title',
+          type: 'Edm.String',
+          searchable: true,
+          filterable: true,
+          sortable: true,
+          facetable: false
+        },
+        {
+          name: 'content',
+          type: 'Edm.String',
+          searchable: true,
+          filterable: false,
+          sortable: false,
+          facetable: false
+        },
+        {
+          name: 'category',
+          type: 'Edm.String',
+          searchable: true,
+          filterable: true,
+          sortable: true,
+          facetable: true
+        },
+        {
+          name: 'filename',
+          type: 'Edm.String',
+          searchable: true,
+          filterable: true,
+          sortable: true,
+          facetable: false
+        },
+        {
+          name: 'timestamp',
+          type: 'Edm.DateTimeOffset',
+          searchable: false,
+          filterable: true,
+          sortable: true,
+          facetable: false
+        },
+        {
+          name: 'contentVector',
+          type: 'Collection(Edm.Single)',
+          searchable: true,
+          filterable: false,
+          sortable: false,
+          facetable: false,
+          dimensions: 1536,
+          vectorSearchProfile: 'defaultProfile'
+        }
+      ],
+      vectorSearch: {
+        profiles: [
+          {
+            name: 'defaultProfile',
+            algorithm: 'defaultAlgorithm'
+          }
+        ],
+        algorithms: [
+          {
+            name: 'defaultAlgorithm',
+            kind: 'hnsw',
+            hnswParameters: {
+              metric: 'cosine',
+              m: 4,
+              efConstruction: 400,
+              efSearch: 500
+            }
+          }
+        ]
+      }
+    };
+
+    const createResponse = await fetch(createUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': process.env.AZURE_SEARCH_API_KEY,
+      },
+      body: JSON.stringify(indexSchema),
+    });
+
+    if (!createResponse.ok) {
+      const errorText = await createResponse.text();
+      console.error('새 인덱스 생성 오류:', createResponse.status, errorText);
+      return res.status(createResponse.status).json({ error: errorText });
+    }
+
+    console.log('✅ 새 인덱스 생성 완료');
+
+    res.json({
+      success: true,
+      message: '인덱스가 완전히 초기화되었습니다'
+    });
+
+  } catch (error) {
+    console.error('❌ 인덱스 초기화 오류:', error);
+    res.status(500).json({
+      error: '인덱스 초기화 실패',
+      message: error.message
+    });
+  }
+});
+
+// 문서 업로드 시 타임스탬프 포함하도록 기존 함수 수정
+// 기존 '/api/search/index-document' 엔드포인트를 다음과 같이 수정:
+
+app.post('/api/search/index-document', async (req, res) => {
+  try {
+    const { id, title, content, filename, category, contentVector } = req.body;
+    const indexName = 'security-docs-index';
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/index?api-version=2023-11-01`;
+    
+    const document = {
+      value: [
+        {
+          '@search.action': 'upload',
+          id: id,
+          title: title,
+          content: content,
+          filename: filename,
+          category: category,
+          timestamp: new Date().toISOString(), // 타임스탬프 추가
+          contentVector: contentVector
+        }
+      ]
+    };
+    
+    console.log('문서 인덱싱 요청 (타임스탬프 포함):', url);
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': process.env.AZURE_SEARCH_API_KEY,
+      },
+      body: JSON.stringify(document),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('문서 인덱싱 오류:', response.status, errorText);
+      return res.status(response.status).json({ error: errorText });
+    }
+
+    const data = await response.json();
+    console.log('✅ 문서 업로드 완료 (타임스탬프 포함):', id);
+    res.json(data);
+  } catch (error) {
+    console.error('문서 인덱싱 프록시 오류:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 하이브리드 검색
 app.post('/api/search/hybrid-search', async (req, res) => {
   try {

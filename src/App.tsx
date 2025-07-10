@@ -19,10 +19,19 @@ const App: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
 
-  // 1단계: 보안 문서
+  // 1단계: 보안 문서 - 개선된 상태들
   const [securityDocs, setSecurityDocs] = useState<File[]>([]);
   const [isIndexing, setIsIndexing] = useState(false);
   const [indexingProgress, setIndexingProgress] = useState(0);
+  const [existingEmbeddingStatus, setExistingEmbeddingStatus] = useState<'checking' | 'exists' | 'none' | 'error'>('checking');
+  const [indexInfo, setIndexInfo] = useState<{
+    documentCount: number;
+    embeddingCount: number;
+    indexSize: string;
+    lastUpdate: string;
+  } | null>(null);
+  const [lastIndexUpdate, setLastIndexUpdate] = useState<string | null>(null);
+  const [uploadMode, setUploadMode] = useState<'replace' | 'append'>('replace');
 
   // 2단계: 템플릿
   const [templates] = useLocalStorage<Template[]>('testTemplates', []);
@@ -56,9 +65,10 @@ const App: React.FC = () => {
     message: '연결 확인 중...'
   });
 
-  // 컴포넌트 마운트 시 API 상태 확인
+  // 컴포넌트 마운트 시 API 상태 및 기존 임베딩 확인
   useEffect(() => {
     checkApiStatus();
+    checkEmbeddingStatus();
   }, []);
 
   // 프록시 서버 상태 확인
@@ -66,10 +76,7 @@ const App: React.FC = () => {
     try {
       console.log('🔍 프록시 서버 상태 확인 중...');
 
-      // 개발/배포 환경 구분
       const isDev = import.meta.env.DEV;
-
-      // 임시: 항상 전체 URL 사용
       const healthUrl = 'https://dopaminesun-server-dycxgacfcmbcc2ec.eastus2-01.azurewebsites.net/api/health';
 
       console.log('헬스 체크 URL:', healthUrl);
@@ -90,7 +97,6 @@ const App: React.FC = () => {
           message: `${isDev ? '개발' : '배포'} 환경 연결 성공`
         });
 
-        // 모든 API가 설정되어 있으면 유효
         setApiConfigValid(openaiConfigured && searchConfigured);
 
       } else {
@@ -106,7 +112,6 @@ const App: React.FC = () => {
     } catch (error) {
       console.error('❌ 프록시 서버 연결 실패:', error);
 
-      // 개발 환경에서만 경고 표시
       const isDev = import.meta.env.DEV;
       if (isDev) {
         setApiStatus({
@@ -128,6 +133,92 @@ const App: React.FC = () => {
     }
   };
 
+  // 유틸리티 함수들
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const formatDate = (dateString: string): string => {
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleString('ko-KR', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return dateString;
+    }
+  };
+
+// 기존 임베딩 상태 확인 함수
+const checkEmbeddingStatus = async () => {
+  setExistingEmbeddingStatus('checking');
+
+  try {
+    console.log('🔍 기존 임베딩 인덱스 상태 확인 중...');
+
+    const result = await azureAISearchService.getIndexStatus();
+
+    if (result.exists && result.documentCount > 0) {
+      setExistingEmbeddingStatus('exists');
+      setIndexInfo({
+        documentCount: result.documentCount,
+        embeddingCount: result.embeddingCount,
+        indexSize: formatFileSize(result.indexSize ?? 0),
+        lastUpdate: formatDate(result.lastUpdate ?? ''),
+      });
+      setLastIndexUpdate(formatDate(result.lastUpdate ?? ''));
+    } else {
+      setExistingEmbeddingStatus('none');
+      setIndexInfo(null);
+    }
+  } catch (error) {
+    console.error('❌ 인덱스 상태 확인 오류:', error);
+    setExistingEmbeddingStatus('error');
+  }
+};
+
+  // 기존 임베딩 사용 함수
+  const useExistingEmbedding = () => {
+    console.log('✅ 기존 임베딩 인덱스 사용');
+    
+    const confirmMessage = `기존 보안 문서 인덱스를 사용합니다.
+
+📊 인덱스 정보:
+- 문서 수: ${indexInfo?.documentCount}개
+- 마지막 업데이트: ${indexInfo?.lastUpdate}
+
+다음 단계로 진행하시겠습니까?`;
+    
+    if (confirm(confirmMessage)) {
+      setCurrentStep(2);
+    }
+  };
+
+  // 보안 문서 없이 진행 함수
+  const skipSecurityDocs = () => {
+    const confirmMessage = `보안 문서 없이 진행합니다.
+
+⚠️ 주의사항:
+- 일반적인 보안 원칙만 적용됩니다
+- 회사별 특화된 보안 정책은 반영되지 않습니다
+- 나중에 언제든 보안 문서를 추가할 수 있습니다
+
+계속 진행하시겠습니까?`;
+    
+    if (confirm(confirmMessage)) {
+      console.log('📝 보안 문서 없이 진행');
+      setCurrentStep(2);
+    }
+  };
+
   // 1단계: 보안 문서 처리
   const handleSecurityDocsUpload = (files: File[]) => {
     setSecurityDocs(files);
@@ -140,14 +231,23 @@ const App: React.FC = () => {
     setIndexingProgress(0);
 
     try {
-      console.log('📄 보안 문서 처리 시작...');
+      console.log(`📄 보안 문서 처리 시작... (${uploadMode} 모드)`);
+      setIndexingProgress(5);
+
+      // 1. 인덱스 초기화 (replace 모드일 때만)
+      if (uploadMode === 'replace') {
+        console.log('🗑️ 기존 인덱스 삭제 중...');
+        await azureAISearchService.recreateIndexWithCORS();
+      } else {
+        console.log('➕ 기존 인덱스에 추가 모드');
+      }
+      
       setIndexingProgress(10);
 
-      await azureAISearchService.recreateIndexWithCORS();
-
+      // 2. 문서 처리
       for (let i = 0; i < securityDocs.length; i++) {
         const file = securityDocs[i];
-        const progressPercent = 10 + ((i + 1) / securityDocs.length) * 90;
+        const progressPercent = 10 + ((i + 1) / securityDocs.length) * 80;
         setIndexingProgress(progressPercent);
 
         console.log(`📝 ${file.name} 처리 중... (${i + 1}/${securityDocs.length})`);
@@ -155,8 +255,13 @@ const App: React.FC = () => {
         const content = await readFileContent(file);
         const embedding = await azureOpenAIService.generateEmbedding(content);
 
+        // 문서 ID 생성 (append 모드에서는 충돌 방지)
+        const documentId = uploadMode === 'append' 
+          ? `doc_${Date.now()}_${i}_append`
+          : `doc_${Date.now()}_${i}`;
+
         await azureAISearchService.indexDocument(
-          `doc_${Date.now()}_${i}`,
+          documentId,
           file.name,
           content,
           file.name,
@@ -167,12 +272,28 @@ const App: React.FC = () => {
         console.log(`✅ ${file.name} 처리 완료!`);
       }
 
-      alert(`🎉 보안 문서 인덱싱이 완료되었습니다!\n처리된 문서: ${securityDocs.length}개`);
+      // 3. 인덱스 상태 업데이트
+      setIndexingProgress(95);
+      await checkEmbeddingStatus();
+
+      setIndexingProgress(100);
+      console.log('🎉 보안 문서 처리 완료!');
+
+      const successMessage = `🎉 보안 문서 처리가 완료되었습니다!
+
+📊 처리 결과:
+- ${uploadMode === 'replace' ? '대체된' : '추가된'} 문서: ${securityDocs.length}개
+- 모드: ${uploadMode === 'replace' ? '기존 인덱스 대체' : '기존 인덱스에 추가'}
+
+다음 단계로 이동합니다.`;
+
+      alert(successMessage);
       setCurrentStep(2);
+
     } catch (error) {
       console.error('❌ 인덱싱 오류:', error);
 
-      let errorMessage = '인덱싱 중 오류가 발생했습니다.\n\n';
+      let errorMessage = '보안 문서 처리 중 오류가 발생했습니다.\n\n';
 
       if (error instanceof Error) {
         errorMessage += `오류 내용: ${error.message}\n\n`;
@@ -326,7 +447,6 @@ const App: React.FC = () => {
       // 3. 보안 규칙이 없는 경우 경고
       if (rules.length === 0) {
         console.warn('⚠️ 관련 보안 규칙을 찾지 못했습니다.');
-        alert('⚠️ 관련 보안 규칙을 찾지 못했습니다.\n\n가능한 원인:\n- 1단계에서 보안 문서를 업로드하지 않았거나\n- 업로드한 문서에 관련 내용이 없습니다\n\n기본 보안 가이드라인으로 시나리오를 생성합니다.');
       }
 
       // 4. 테스트 시나리오 생성 (70% 진행)
@@ -361,8 +481,7 @@ const App: React.FC = () => {
       setProgress(100);
       console.log('🎉 전체 프로세스 완료!');
 
-      const successMessage = `
-🎉 테스트 시나리오 생성이 완료되었습니다!
+      const successMessage = `🎉 테스트 시나리오 생성이 완료되었습니다!
 
 📊 생성 결과:
 - 테스트 케이스: ${scenarios.length}개
@@ -370,8 +489,7 @@ const App: React.FC = () => {
 - 분석된 API: ${codeAnalysis.backendApis.length}개
 - 보안 키워드: ${codeAnalysis.keywords.length}개
 
-다음 단계로 이동합니다.
-      `;
+다음 단계로 이동합니다.`;
 
       alert(successMessage);
       setCurrentStep(4);
@@ -455,7 +573,6 @@ ${customPrompt}
 ]
 `;
 
-      // 🔥 수정: azureOpenAIService 대신 직접 프록시 API 호출
       const proxyUrl = import.meta.env.DEV
         ? 'http://localhost:3001'
         : (import.meta.env.VITE_PROXY_URL || 'https://dopaminesun-server-dycxgacfcmbcc2ec.eastus2-01.azurewebsites.net');
@@ -521,16 +638,14 @@ ${customPrompt}
       );
       setMarkdownResult(newMarkdown);
 
-      const successMessage = `
-🎉 커스텀 재생성이 완료되었습니다!
+      const successMessage = `🎉 커스텀 재생성이 완료되었습니다!
 
 📊 재생성 결과:
 - 새로운 테스트 케이스: ${newScenarios.length}개
 - 적용된 요구사항: "${customPrompt.substring(0, 50)}${customPrompt.length > 50 ? '...' : ''}"
 - 보안 규칙 반영: ${securityRules.length}개
 
-결과를 확인해보세요!
-    `;
+결과를 확인해보세요!`;
 
       alert(successMessage);
 
@@ -687,72 +802,213 @@ ${customPrompt}
 
         {/* 메인 컨텐츠 */}
         <div className="bg-white rounded-lg shadow-sm p-6 lg:p-8">
-          {/* 1단계: 보안 문서 업로드 */}
+          {/* 1단계: 보안 문서 업로드 - 개선된 버전 */}
           {currentStep === 1 && (
             <div className="space-y-6">
               <div className="flex items-center space-x-2">
                 <FileText className="w-6 h-6 text-blue-500" />
-                <h2 className="text-2xl font-bold text-gray-900">보안 문서 업로드</h2>
+                <h2 className="text-2xl font-bold text-gray-900">보안 문서 설정</h2>
               </div>
 
               <div className="bg-blue-50 p-4 rounded-lg">
                 <p className="text-blue-800">
-                  회사의 보안 정책 문서를 업로드하여 RAG 검색 인덱스를 구축합니다.
-                  이 작업은 최초 1회만 수행하면 됩니다.
+                  회사의 보안 정책 문서를 기반으로 RAG 검색을 수행합니다.
+                  기존 임베딩을 재사용하거나 새로운 문서를 업로드할 수 있습니다.
                 </p>
               </div>
 
-              <FileUploader
-                acceptedExtensions={SUPPORTED_DOC_EXTENSIONS}
-                onFilesChange={handleSecurityDocsUpload}
-                title="보안 문서를 업로드하세요"
-                description="PDF, Word 문서를 지원합니다"
-                maxFiles={20}
-              />
-
-              {securityDocs.length > 0 && (
+              {/* 기존 임베딩 상태 확인 */}
+              <div className="bg-white border border-gray-200 rounded-lg p-6">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">임베딩 인덱스 상태</h3>
+                
+                {/* 임베딩 상태 표시 */}
                 <div className="space-y-4">
-                  {isIndexing && (
-                    <ProgressBar
-                      progress={indexingProgress}
-                      steps={[
-                        {
-                          id: 'reading',
-                          label: '파일 읽기',
-                          status: indexingProgress > 0 ? 'completed' : 'pending'
-                        },
-                        {
-                          id: 'embedding',
-                          label: '임베딩 생성',
-                          status: indexingProgress > 50 ? 'completed' : indexingProgress > 0 ? 'active' : 'pending'
-                        },
-                        {
-                          id: 'indexing',
-                          label: '인덱스 구축',
-                          status: indexingProgress === 100 ? 'completed' : indexingProgress > 50 ? 'active' : 'pending'
-                        }
-                      ]}
-                    />
-                  )}
-
-                  <div className="flex justify-center">
-                    <button
-                      onClick={processSecurityDocs}
-                      disabled={isIndexing || !apiConfigValid}
-                      className="bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600 disabled:bg-gray-400 flex items-center space-x-2"
-                    >
-                      {isIndexing ? (
-                        <>
-                          <LoadingSpinner size="sm" color="gray" />
-                          <span>처리 중...</span>
-                        </>
+                  <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                    <div className="flex items-center space-x-3">
+                      {existingEmbeddingStatus === 'checking' ? (
+                        <LoadingSpinner size="sm" color="gray" />
+                      ) : existingEmbeddingStatus === 'exists' ? (
+                        <div className="w-3 h-3 bg-green-500 rounded-full"></div>
                       ) : (
-                        <>
-                          <Upload className="w-5 h-5" />
-                          <span>임베딩 생성 및 인덱싱 시작</span>
-                        </>
+                        <div className="w-3 h-3 bg-gray-400 rounded-full"></div>
                       )}
-                    </button>
+                      <div>
+                        <p className="font-medium text-gray-900">
+                          {existingEmbeddingStatus === 'checking' && '인덱스 상태 확인 중...'}
+                          {existingEmbeddingStatus === 'exists' && '기존 보안 문서 인덱스 발견'}
+                          {existingEmbeddingStatus === 'none' && '기존 인덱스 없음'}
+                          {existingEmbeddingStatus === 'error' && '인덱스 상태 확인 실패'}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          {existingEmbeddingStatus === 'exists' && `마지막 업데이트: ${lastIndexUpdate || '알 수 없음'}`}
+                          {existingEmbeddingStatus === 'none' && '새로운 보안 문서를 업로드해주세요'}
+                          {existingEmbeddingStatus === 'error' && '네트워크 연결을 확인하고 다시 시도해주세요'}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    {existingEmbeddingStatus === 'exists' && (
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={useExistingEmbedding}
+                          className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 flex items-center space-x-2"
+                        >
+                          <span>기존 인덱스 사용</span>
+                          <ArrowRight className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={checkEmbeddingStatus}
+                          className="bg-gray-500 text-white px-3 py-2 rounded-lg hover:bg-gray-600"
+                        >
+                          <RefreshCw className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 기존 인덱스 정보 표시 */}
+                  {existingEmbeddingStatus === 'exists' && indexInfo && (
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                      <h4 className="font-medium text-green-800 mb-2">기존 인덱스 정보</h4>
+                      <div className="text-sm text-green-700 space-y-1">
+                        <p>• 문서 수: {indexInfo.documentCount}개</p>
+                        <p>• 총 임베딩 수: {indexInfo.embeddingCount}개</p>
+                        <p>• 인덱스 크기: {indexInfo.indexSize}</p>
+                        <p>• 마지막 업데이트: {indexInfo.lastUpdate}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 새 문서 업로드 섹션 */}
+              <div className="bg-white border border-gray-200 rounded-lg p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-medium text-gray-900">새 보안 문서 업로드</h3>
+                  {existingEmbeddingStatus === 'exists' && (
+                    <div className="flex items-center space-x-2 text-sm text-gray-600">
+                      <AlertCircle className="w-4 h-4 text-yellow-500" />
+                      <span>새 문서를 업로드하면 기존 인덱스가 대체됩니다</span>
+                    </div>
+                  )}
+                </div>
+
+                <FileUploader
+                  acceptedExtensions={SUPPORTED_DOC_EXTENSIONS}
+                  onFilesChange={handleSecurityDocsUpload}
+                  title="보안 문서를 업로드하세요"
+                  description="PDF, Word 문서를 지원합니다"
+                  maxFiles={20}
+                />
+
+                {securityDocs.length > 0 && (
+                  <div className="space-y-4 mt-6">
+                    {/* 업로드 옵션 선택 */}
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                      <h4 className="font-medium text-yellow-800 mb-3">업로드 방식 선택</h4>
+                      <div className="space-y-2">
+                        <label className="flex items-center space-x-3">
+                          <input
+                            type="radio"
+                            name="uploadMode"
+                            value="replace"
+                            checked={uploadMode === 'replace'}
+                            onChange={(e) => setUploadMode(e.target.value as 'replace' | 'append')}
+                            className="text-blue-500"
+                          />
+                          <div>
+                            <span className="font-medium text-gray-900">기존 인덱스 대체</span>
+                            <p className="text-sm text-gray-600">모든 기존 문서를 삭제하고 새로 업로드한 문서로 대체합니다</p>
+                          </div>
+                        </label>
+                        <label className="flex items-center space-x-3">
+                          <input
+                            type="radio"
+                            name="uploadMode"
+                            value="append"
+                            checked={uploadMode === 'append'}
+                            onChange={(e) => setUploadMode(e.target.value as 'replace' | 'append')}
+                            className="text-blue-500"
+                          />
+                          <div>
+                            <span className="font-medium text-gray-900">기존 인덱스에 추가</span>
+                            <p className="text-sm text-gray-600">기존 문서를 유지하고 새 문서를 추가합니다</p>
+                          </div>
+                        </label>
+                      </div>
+                    </div>
+
+                    {isIndexing && (
+                      <ProgressBar
+                        progress={indexingProgress}
+                        steps={[
+                          {
+                            id: 'preparing',
+                            label: uploadMode === 'replace' ? '기존 인덱스 정리' : '인덱스 준비',
+                            status: indexingProgress > 5 ? 'completed' : indexingProgress > 0 ? 'active' : 'pending'
+                          },
+                          {
+                            id: 'reading',
+                            label: '파일 읽기',
+                            status: indexingProgress > 20 ? 'completed' : indexingProgress > 5 ? 'active' : 'pending'
+                          },
+                          {
+                            id: 'embedding',
+                            label: '임베딩 생성',
+                            status: indexingProgress > 60 ? 'completed' : indexingProgress > 20 ? 'active' : 'pending'
+                          },
+                          {
+                            id: 'indexing',
+                            label: '인덱스 구축',
+                            status: indexingProgress === 100 ? 'completed' : indexingProgress > 60 ? 'active' : 'pending'
+                          }
+                        ]}
+                      />
+                    )}
+
+                    <div className="flex justify-center">
+                      <button
+                        onClick={processSecurityDocs}
+                        disabled={isIndexing || !apiConfigValid}
+                        className="bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600 disabled:bg-gray-400 flex items-center space-x-2"
+                      >
+                        {isIndexing ? (
+                          <>
+                            <LoadingSpinner size="sm" color="gray" />
+                            <span>처리 중...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-5 h-5" />
+                            <span>
+                              {uploadMode === 'replace' ? '인덱스 대체 및 생성' : '인덱스에 추가'}
+                            </span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 빠른 진행 옵션 (기존 인덱스가 없을 때) */}
+              {existingEmbeddingStatus === 'none' && (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <div className="flex items-start space-x-3">
+                    <AlertCircle className="w-5 h-5 text-gray-500 mt-0.5" />
+                    <div>
+                      <h4 className="font-medium text-gray-900">빠른 테스트 옵션</h4>
+                      <p className="text-sm text-gray-600 mt-1 mb-3">
+                        보안 문서 없이도 테스트해볼 수 있습니다. 일반적인 보안 원칙을 기반으로 시나리오를 생성합니다.
+                      </p>
+                      <button
+                        onClick={skipSecurityDocs}
+                        className="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 flex items-center space-x-2"
+                      >
+                        <span>보안 문서 없이 진행</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
