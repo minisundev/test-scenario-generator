@@ -240,63 +240,116 @@ class AzureAISearchService {
 
   // 하이브리드 검색
   public async searchSecurityRules(
-    query: string,
-    queryVector?: number[],
-    top: number = 5
-  ): Promise<SecurityRule[]> {
-    const url = this.createApiUrl('/api/search/hybrid-search');
-    
-    const searchBody = {
-      query: query,
-      queryVector: queryVector,
-      top: top,
-      select: 'id,title,filename,category',
-      highlight: 'content',
-      highlightPreTag: '<mark>',
-      highlightPostTag: '</mark>',
-      searchMode: 'any'
-    };
+  query: string,
+  queryVector?: number[],
+  top: number = 5
+): Promise<SecurityRule[]> {
+  const url = this.createApiUrl('/api/search/hybrid-search');
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(searchBody),
-    });
+  const searchBody = {
+    query: query,
+    queryVector: queryVector,
+    top: top,
+    select: 'id,title,filename,category',
+    highlight: 'content',
+    highlightPreTag: '<mark>',
+    highlightPostTag: '</mark>',
+    searchMode: 'any'
+  };
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`검색 실패: ${response.status} ${response.statusText}\nDetails: ${errorText}`);
+  // ✅ 로깅 시작
+  console.log('📤 하이브리드 검색 요청 URL:', url);
+  console.log('🧠 쿼리:', query);
+  console.log('🧪 벡터 길이:', queryVector?.length);
+  console.log('📦 전송할 searchBody:', JSON.stringify(searchBody, null, 2));
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(searchBody),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('❌ 검색 실패 상태:', response.status, response.statusText);
+    console.error('❌ 오류 상세:', errorText);
+    throw new Error(`검색 실패: ${response.status} ${response.statusText}\nDetails: ${errorText}`);
+  }
+
+  const data = await response.json();
+
+  const processedResults = (data.results || []).map((result: any) => {
+    let processedContent = '';
+
+    if (result['@search.highlights'] && result['@search.highlights'].content) {
+      processedContent = result['@search.highlights'].content
+        .slice(0, 3)
+        .join('... ')
+        .substring(0, 800) + '...';
+    } else if (result.content) {
+      processedContent = this.summarizeContent(result.content, 800);
     }
 
-    const data = await response.json();
-    
-    const processedResults = (data.results || []).map((result: any) => {
-      let processedContent = '';
-      
-      if (result['@search.highlights'] && result['@search.highlights'].content) {
-        processedContent = result['@search.highlights'].content
-          .slice(0, 3)
-          .join('... ')
-          .substring(0, 800) + '...';
-      } else if (result.content) {
-        processedContent = this.summarizeContent(result.content, 800);
-      }
-      
-      return {
-        id: result.id || '',
-        title: result.title || '',
-        content: processedContent,
-        filename: result.filename || '',
-        category: result.category || 'security-policy',
-        relevance: this.normalizeRelevanceScore(result['@search.score'] || 0)
-      };
-    });
+    return {
+      id: result.id || '',
+      title: result.title || '',
+      content: processedContent,
+      filename: result.filename || '',
+      category: result.category || 'security-policy',
+      relevance: this.normalizeRelevanceScore(result['@search.score'] || 0)
+    };
+  });
 
-    console.log('검색 결과 후처리 완료:', processedResults.length);
-    return processedResults;
+  console.log('✅ 검색 결과 후처리 완료:', processedResults.length);
+  return processedResults;
+}
+
+public async searchByKeywordsOnly(keywords: string[]): Promise<SecurityRule[]> {
+  const url = this.createApiUrl('/api/search/keyword-search');
+
+  const query = keywords.map(k => `"${k}"~2`).join(' OR ');
+  const searchBody = {
+    query,
+    top: 5,
+    select: 'id,title,filename,category',
+    highlight: 'content',
+    highlightPreTag: '<mark>',
+    highlightPostTag: '</mark>',
+    searchMode: 'any'
+  };
+
+  console.log('🔍 키워드 기반 검색 요청:', JSON.stringify(searchBody, null, 2));
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(searchBody)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('❌ 키워드 검색 실패:', response.status, errorText);
+    throw new Error(`검색 실패: ${response.status} ${response.statusText}\nDetails: ${errorText}`);
   }
+
+  const data = await response.json();
+
+  const results = (data.results || []).map((result: any) => ({
+    id: result.id,
+    title: result.title,
+    content: result.content,
+    filename: result.filename,
+    category: result.category,
+    relevance: result.relevance
+  }));
+
+  console.log(`✅ 키워드 검색 결과 ${results.length}건`);
+  return results;
+}
 
   // 키워드 기반 검색
   public async searchByKeywords(keywords: string[]): Promise<SecurityRule[]> {

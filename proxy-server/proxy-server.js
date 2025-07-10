@@ -249,7 +249,7 @@ app.use('/api/openai', async (req, res) => {
 app.post('/api/search/create-index', async (req, res) => {
   try {
     const { indexName } = req.body;
-    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2023-11-01`;
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2024-03-01-preview`;
     
     const indexSchema = {
       name: indexName,
@@ -358,7 +358,7 @@ app.post('/api/search/index-document', async (req, res) => {
   try {
     const { id, title, content, filename, category, contentVector } = req.body;
     const indexName = 'security-docs-index';
-    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/index?api-version=2023-11-01`;
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/index?api-version=2024-03-01-preview`;
     
     const document = {
       value: [
@@ -404,7 +404,7 @@ app.post('/api/search/index-documents', async (req, res) => {
   try {
     const { documents } = req.body;
     const indexName = 'security-docs-index';
-    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/index?api-version=2023-11-01`;
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/index?api-version=2024-03-01-preview`;
     
     const batch = {
       value: documents.map(doc => ({
@@ -446,7 +446,7 @@ app.get('/api/search/index/status', async (req, res) => {
     console.log('📊 인덱스 상태 확인 요청');
 
     // 1. 인덱스 존재 여부 확인
-    const indexUrl = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2023-11-01`;
+    const indexUrl = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2024-03-01-preview`;
     const indexResponse = await fetch(indexUrl, {
       method: 'GET',
       headers: {
@@ -473,7 +473,7 @@ app.get('/api/search/index/status', async (req, res) => {
     }
 
     // 2. 인덱스 통계 확인
-    const statsUrl = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/stats?api-version=2023-11-01`;
+    const statsUrl = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/stats?api-version=2024-03-01-preview`;
     const statsResponse = await fetch(statsUrl, {
       method: 'GET',
       headers: {
@@ -494,7 +494,7 @@ app.get('/api/search/index/status', async (req, res) => {
     let lastUpdate = null;
     if (statsData.documentCount > 0) {
       try {
-        const searchUrl = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/search?api-version=2023-11-01`;
+        const searchUrl = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/search?api-version=2024-03-01-preview`;
         const searchResponse = await fetch(searchUrl, {
           method: 'POST',
           headers: {
@@ -560,7 +560,7 @@ app.delete('/api/search/index/clear', async (req, res) => {
     console.log('🗑️ 인덱스 완전 초기화 요청');
 
     // 1. 기존 인덱스 삭제
-    const deleteUrl = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2023-11-01`;
+    const deleteUrl = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2024-03-01-preview`;
     const deleteResponse = await fetch(deleteUrl, {
       method: 'DELETE',
       headers: {
@@ -580,7 +580,7 @@ app.delete('/api/search/index/clear', async (req, res) => {
     await new Promise(resolve => setTimeout(resolve, 2000));
 
     // 3. 새 인덱스 생성
-    const createUrl = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2023-11-01`;
+    const createUrl = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2024-03-01-preview`;
     
     const indexSchema = {
       name: indexName,
@@ -705,7 +705,7 @@ app.post('/api/search/index-document', async (req, res) => {
   try {
     const { id, title, content, filename, category, contentVector } = req.body;
     const indexName = 'security-docs-index';
-    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/index?api-version=2023-11-01`;
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/index?api-version=2024-03-01-preview`;
     
     const document = {
       value: [
@@ -763,7 +763,7 @@ app.post('/api/search/hybrid-search', async (req, res) => {
     } = req.body;
     
     const indexName = 'security-docs-index';
-    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/search?api-version=2023-11-01`;
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/search?api-version=2024-03-01-preview`;
     
     const searchBody = {
       search: query || '*',
@@ -848,6 +848,75 @@ app.post('/api/search/hybrid-search', async (req, res) => {
   }
 });
 
+// 키워드 검색
+app.post('/api/search/keyword-search', async (req, res) => {
+  try {
+    const {
+      query,
+      top = 5,
+      select,
+      highlight,
+      highlightPreTag = '<mark>',
+      highlightPostTag = '</mark>',
+      searchMode = 'any'
+    } = req.body;
+
+    const indexName = 'security-docs-index';
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/search?api-version=2023-11-01`;
+
+    const searchBody = {
+      search: query || '*',
+      top,
+      select: select || 'id,title,filename,category',
+      searchMode,
+      queryType: 'full',
+      searchFields: 'title,content,category'
+    };
+
+    if (highlight) {
+      searchBody.highlight = highlight;
+      searchBody.highlightPreTag = highlightPreTag;
+      searchBody.highlightPostTag = highlightPostTag;
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': process.env.AZURE_SEARCH_API_KEY,
+      },
+      body: JSON.stringify(searchBody),
+    });
+
+    const data = await response.json();
+    const results = (data.value || []).map((item, index) => {
+      let processedContent = '';
+      if (item['@search.highlights']?.content) {
+        processedContent = item['@search.highlights'].content
+          .slice(0, 3)
+          .join('... ')
+          .substring(0, 800) + '...';
+      } else {
+        processedContent = item.content || '';
+      }
+
+      return {
+        id: item.id || `keyword_result_${index}`,
+        title: item.title || '',
+        content: processedContent,
+        filename: item.filename || '',
+        category: item.category || '',
+        relevance: item['@search.score'] || 0
+      };
+    });
+
+    res.json({ results });
+  } catch (error) {
+    console.error('❌ 키워드 검색 실패:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 카테고리별 검색
 app.post('/api/search/category-search', async (req, res) => {
   try {
@@ -861,7 +930,7 @@ app.post('/api/search/category-search', async (req, res) => {
     } = req.body;
     
     const indexName = 'security-docs-index';
-    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/search?api-version=2023-11-01`;
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/search?api-version=2024-03-01-preview`;
     
     const searchBody = {
       search: query,
@@ -932,7 +1001,7 @@ app.post('/api/search/category-search', async (req, res) => {
 app.get('/api/search/index-stats', async (req, res) => {
   try {
     const indexName = 'security-docs-index';
-    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/stats?api-version=2023-11-01`;
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/stats?api-version=2024-03-01-preview`;
     
     console.log('인덱스 상태 확인 요청:', url);
     
@@ -964,7 +1033,7 @@ app.get('/api/search/index-stats', async (req, res) => {
 app.delete('/api/search/delete-index', async (req, res) => {
   try {
     const { indexName } = req.body;
-    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2023-11-01`;
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2024-03-01-preview`;
     
     console.log('인덱스 삭제 요청:', url);
     
@@ -992,7 +1061,7 @@ app.delete('/api/search/delete-index', async (req, res) => {
 app.post('/api/search/index-exists', async (req, res) => {
   try {
     const { indexName } = req.body;
-    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2023-11-01`;
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2024-03-01-preview`;
     
     console.log('인덱스 존재 여부 확인 요청:', url);
     
@@ -1016,7 +1085,7 @@ app.post('/api/search/index-exists', async (req, res) => {
 app.put('/api/search/indexes/:indexName', async (req, res) => {
   try {
     const { indexName } = req.params;
-    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2023-11-01`;
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2024-03-01-preview`;
     
     console.log('인덱스 생성 요청:', url);
     
@@ -1047,7 +1116,7 @@ app.put('/api/search/indexes/:indexName', async (req, res) => {
 app.delete('/api/search/indexes/:indexName', async (req, res) => {
   try {
     const { indexName } = req.params;
-    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2023-11-01`;
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}?api-version=2024-03-01-preview`;
     
     console.log('인덱스 삭제 요청:', url);
     
@@ -1075,7 +1144,7 @@ app.delete('/api/search/indexes/:indexName', async (req, res) => {
 app.post('/api/search/indexes/:indexName/docs/index', async (req, res) => {
   try {
     const { indexName } = req.params;
-    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/index?api-version=2023-11-01`;
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/index?api-version=2024-03-01-preview`;
     
     console.log('문서 인덱싱 요청:', url);
     
@@ -1106,7 +1175,7 @@ app.post('/api/search/indexes/:indexName/docs/index', async (req, res) => {
 app.post('/api/search/indexes/:indexName/docs/search', async (req, res) => {
   try {
     const { indexName } = req.params;
-    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/search?api-version=2023-11-01`;
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/search?api-version=2024-03-01-preview`;
     
     console.log('문서 검색 요청:', url);
     

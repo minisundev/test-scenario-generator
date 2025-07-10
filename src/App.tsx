@@ -157,38 +157,38 @@ const App: React.FC = () => {
     }
   };
 
-// 기존 임베딩 상태 확인 함수
-const checkEmbeddingStatus = async () => {
-  setExistingEmbeddingStatus('checking');
+  // 기존 임베딩 상태 확인 함수
+  const checkEmbeddingStatus = async () => {
+    setExistingEmbeddingStatus('checking');
 
-  try {
-    console.log('🔍 기존 임베딩 인덱스 상태 확인 중...');
+    try {
+      console.log('🔍 기존 임베딩 인덱스 상태 확인 중...');
 
-    const result = await azureAISearchService.getIndexStatus();
+      const result = await azureAISearchService.getIndexStatus();
 
-    if (result.exists && result.documentCount > 0) {
-      setExistingEmbeddingStatus('exists');
-      setIndexInfo({
-        documentCount: result.documentCount,
-        embeddingCount: result.embeddingCount,
-        indexSize: formatFileSize(result.indexSize ?? 0),
-        lastUpdate: formatDate(result.lastUpdate ?? ''),
-      });
-      setLastIndexUpdate(formatDate(result.lastUpdate ?? ''));
-    } else {
-      setExistingEmbeddingStatus('none');
-      setIndexInfo(null);
+      if (result.exists && result.documentCount > 0) {
+        setExistingEmbeddingStatus('exists');
+        setIndexInfo({
+          documentCount: result.documentCount,
+          embeddingCount: result.embeddingCount,
+          indexSize: formatFileSize(result.indexSize ?? 0),
+          lastUpdate: formatDate(result.lastUpdate ?? ''),
+        });
+        setLastIndexUpdate(formatDate(result.lastUpdate ?? ''));
+      } else {
+        setExistingEmbeddingStatus('none');
+        setIndexInfo(null);
+      }
+    } catch (error) {
+      console.error('❌ 인덱스 상태 확인 오류:', error);
+      setExistingEmbeddingStatus('error');
     }
-  } catch (error) {
-    console.error('❌ 인덱스 상태 확인 오류:', error);
-    setExistingEmbeddingStatus('error');
-  }
-};
+  };
 
   // 기존 임베딩 사용 함수
   const useExistingEmbedding = () => {
     console.log('✅ 기존 임베딩 인덱스 사용');
-    
+
     const confirmMessage = `기존 보안 문서 인덱스를 사용합니다.
 
 📊 인덱스 정보:
@@ -196,7 +196,7 @@ const checkEmbeddingStatus = async () => {
 - 마지막 업데이트: ${indexInfo?.lastUpdate}
 
 다음 단계로 진행하시겠습니까?`;
-    
+
     if (confirm(confirmMessage)) {
       setCurrentStep(2);
     }
@@ -212,7 +212,7 @@ const checkEmbeddingStatus = async () => {
 - 나중에 언제든 보안 문서를 추가할 수 있습니다
 
 계속 진행하시겠습니까?`;
-    
+
     if (confirm(confirmMessage)) {
       console.log('📝 보안 문서 없이 진행');
       setCurrentStep(2);
@@ -241,7 +241,7 @@ const checkEmbeddingStatus = async () => {
       } else {
         console.log('➕ 기존 인덱스에 추가 모드');
       }
-      
+
       setIndexingProgress(10);
 
       // 2. 문서 처리
@@ -256,7 +256,7 @@ const checkEmbeddingStatus = async () => {
         const embedding = await azureOpenAIService.generateEmbedding(content);
 
         // 문서 ID 생성 (append 모드에서는 충돌 방지)
-        const documentId = uploadMode === 'append' 
+        const documentId = uploadMode === 'append'
           ? `doc_${Date.now()}_${i}_append`
           : `doc_${Date.now()}_${i}`;
 
@@ -440,9 +440,14 @@ const checkEmbeddingStatus = async () => {
       // 2. RAG 기반 보안 규칙 검색 (40% 진행)
       setProgress(40);
       console.log('🔍 2단계: 보안 규칙 검색 시작...');
-      const rules = await azureOpenAIService.searchSecurityRules(codeAnalysis);
+      console.log('분석된 코드:', codeAnalysis);
+
+      const keywordList = codeAnalysis.keywords || []; // 또는 GPT가 추출한 키워드 배열
+      const rules = await azureAISearchService.searchByKeywordsOnly(keywordList);
+
       setSecurityRules(rules);
       console.log(`✅ 보안 규칙 검색 완료: ${rules.length}개 규칙 발견`);
+
 
       // 3. 보안 규칙이 없는 경우 경고
       if (rules.length === 0) {
@@ -820,7 +825,7 @@ ${customPrompt}
               {/* 기존 임베딩 상태 확인 */}
               <div className="bg-white border border-gray-200 rounded-lg p-6">
                 <h3 className="text-lg font-medium text-gray-900 mb-4">임베딩 인덱스 상태</h3>
-                
+
                 {/* 임베딩 상태 표시 */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
@@ -846,7 +851,7 @@ ${customPrompt}
                         </p>
                       </div>
                     </div>
-                    
+
                     {existingEmbeddingStatus === 'exists' && (
                       <div className="flex space-x-2">
                         <button
@@ -1038,8 +1043,8 @@ ${customPrompt}
                       <div
                         key={template.id}
                         className={`border rounded-lg p-4 cursor-pointer transition-all ${selectedTemplate?.id === template.id
-                            ? 'border-blue-500 bg-blue-50'
-                            : 'border-gray-200 hover:border-gray-300'
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-gray-200 hover:border-gray-300'
                           }`}
                         onClick={() => setSelectedTemplate(template)}
                       >
