@@ -1307,10 +1307,10 @@ ${customPrompt}
                   <div className="text-2xl font-bold text-blue-600">{generatedScenarios.length}</div>
                   <div className="text-sm text-blue-800">생성된 테스트 케이스</div>
                 </div>
-                <div className="bg-green-50 p-4 rounded-lg text-center">
+                {/* <div className="bg-green-50 p-4 rounded-lg text-center">
                   <div className="text-2xl font-bold text-green-600">{securityRules.length}</div>
                   <div className="text-sm text-green-800">적용된 보안 규칙</div>
-                </div>
+                </div> */}
                 <div className="bg-purple-50 p-4 rounded-lg text-center">
                   <div className="text-2xl font-bold text-purple-600">{selectedTemplate?.columns.length || 0}</div>
                   <div className="text-sm text-purple-800">테스트 항목</div>

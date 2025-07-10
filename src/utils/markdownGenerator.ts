@@ -30,9 +30,9 @@ export class MarkdownGenerator {
     }
     
     // 적용된 보안 규칙
-    if (metadata?.securityRules) {
-      markdown += this.generateSecurityRules(metadata.securityRules);
-    }
+    // if (metadata?.securityRules) {
+    //   markdown += this.generateSecurityRules(metadata.securityRules);
+    // }
     
     // 테스트 시나리오 테이블
     markdown += this.generateTestScenariosTable(scenarios, template);
@@ -158,27 +158,27 @@ ${(codeAnalysis.components || []).map(comp => `- \`${this.safeStringify(comp)}\`
   }
 
   // 적용된 보안 규칙
-  private static generateSecurityRules(securityRules: SecurityRule[]): string {
-    let section = `## 🛡️ 적용된 보안 규칙
+//   private static generateSecurityRules(securityRules: SecurityRule[]): string {
+//     let section = `## 🛡️ 적용된 보안 규칙
 
-다음 보안 규칙들이 테스트 시나리오 생성에 적용되었습니다:
+// 다음 보안 규칙들이 테스트 시나리오 생성에 적용되었습니다:
 
-`;
+// `;
 
-    securityRules.forEach((rule, index) => {
-      section += `### ${index + 1}. ${rule.title}
+//     securityRules.forEach((rule, index) => {
+//       section += `### ${index + 1}. ${rule.title}
 
-**카테고리**: ${rule.category}  
-**관련성 점수**: ${(rule.relevance * 100).toFixed(1)}%
+// **카테고리**: ${rule.category}  
+// **관련성 점수**: ${(rule.relevance * 100).toFixed(1)}%
 
-${rule.content}
+// ${rule.content}
 
-`;
-    });
+// `;
+//     });
 
-    section += '---\n\n';
-    return section;
-  }
+//     section += '---\n\n';
+//     return section;
+//   }
 
   // 테스트 시나리오 테이블
   private static generateTestScenariosTable(scenarios: TestScenario[], template: Template): string {
