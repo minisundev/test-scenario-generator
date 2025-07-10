@@ -300,42 +300,179 @@ ${customPrompt}
               content: enhancedPrompt
             }
 ```
+### RAG 검색
+```tsx
+// 하이브리드 검색
+app.post('/api/search/hybrid-search', async (req, res) => {
+  try {
+    const { 
+      query, 
+      queryVector, 
+      top = 5, 
+      select,
+      highlight,
+      highlightPreTag = '<mark>',
+      highlightPostTag = '</mark>',
+      searchMode = 'any'
+    } = req.body;
+    
+    const indexName = 'security-docs-index';
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/search?api-version=2024-03-01-preview`;
+    
+    const searchBody = {
+      search: query || '*',
+      top: top,
+      select: select || 'id,title,filename,category',
+      searchMode: searchMode,
+      queryType: 'full',
+      searchFields: 'title,content,category'
+    };
 
-## 🐳 Docker 구성 요약
+    // 하이라이트 설정 추가
+    if (highlight) {
+      searchBody.highlight = highlight;
+      searchBody.highlightPreTag = highlightPreTag;
+      searchBody.highlightPostTag = highlightPostTag;
+    }
 
-```yaml
-version: '3.8'
+    // 벡터 검색 추가 (하이브리드 검색)
+    if (queryVector && queryVector.length > 0) {
+      searchBody.vectors = [
+        {
+          value: queryVector,
+          fields: 'contentVector',
+          k: top
+        }
+      ];
+    }
+    
+    console.log('하이브리드 검색 요청:', url);
+    console.log('검색 본문:', JSON.stringify(searchBody, null, 2));
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': process.env.AZURE_SEARCH_API_KEY,
+      },
+      body: JSON.stringify(searchBody),
+    });
 
-services:
-  proxy-server:
-    build:
-      context: ./proxy-server
-    ports:
-      - "3001:3001"
-    environment:
-      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY}
-      AZURE_SEARCH_API_KEY: ${AZURE_SEARCH_API_KEY}
-    networks:
-      - app-network
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('하이브리드 검색 오류:', response.status, errorText);
+      return res.status(response.status).json({ error: errorText });
+    }
 
-  frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend
-      args:
-        VITE_API_BASE_URL: https://dopaminesun-server-dycxgacfcmbcc2ec.eastus2-01.azurewebsites.net
-    ports:
-      - "80:80"
-    networks:
-      - app-network
+    const data = await response.json();
+    console.log('Azure Search 응답:', JSON.stringify(data, null, 2));
+    
+    // 결과 후처리 - content 요약 및 하이라이트 처리
+    const results = data.value.map((item, index) => {
+      let processedContent = '';
+      
+      // 하이라이트된 content가 있으면 그것을 사용
+      if (item['@search.highlights'] && item['@search.highlights'].content) {
+        processedContent = item['@search.highlights'].content
+          .slice(0, 3) // 상위 3개 하이라이트만
+          .join('... ')
+          .substring(0, 800) + '...';
+      } else if (item.content) {
+        // 하이라이트가 없으면 원본 content 요약
+        processedContent = summarizeContent(item.content, 800);
+      }
+      
+      return {
+        id: item.id || `result_${index}`,
+        title: item.title || '제목 없음',
+        content: processedContent,
+        filename: item.filename || '',
+        category: item.category || '일반',
+        relevance: normalizeRelevanceScore(item['@search.score']),
+        '@search.score': item['@search.score'],
+        '@search.highlights': item['@search.highlights']
+      };
+    });
 
-networks:
-  app-network:
-    driver: bridge
+    console.log(`검색 결과 후처리 완료: ${results.length}개`);
+    res.json({ results });
+  } catch (error) {
+    console.error('하이브리드 검색 프록시 오류:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 ```
 
----
+```tsx
+// 키워드 검색
+app.post('/api/search/keyword-search', async (req, res) => {
+  try {
+    const {
+      query,
+      top = 5,
+      select,
+      highlight,
+      highlightPreTag = '<mark>',
+      highlightPostTag = '</mark>',
+      searchMode = 'any'
+    } = req.body;
+
+    const indexName = 'security-docs-index';
+    const url = `${process.env.AZURE_SEARCH_ENDPOINT}/indexes/${indexName}/docs/search?api-version=2023-11-01`;
+
+    const searchBody = {
+      search: query || '*',
+      top,
+      select: select || 'id,title,filename,category',
+      searchMode,
+      queryType: 'full',
+      searchFields: 'title,content,category'
+    };
+
+    if (highlight) {
+      searchBody.highlight = highlight;
+      searchBody.highlightPreTag = highlightPreTag;
+      searchBody.highlightPostTag = highlightPostTag;
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': process.env.AZURE_SEARCH_API_KEY,
+      },
+      body: JSON.stringify(searchBody),
+    });
+
+    const data = await response.json();
+    const results = (data.value || []).map((item, index) => {
+      let processedContent = '';
+      if (item['@search.highlights']?.content) {
+        processedContent = item['@search.highlights'].content
+          .slice(0, 3)
+          .join('... ')
+          .substring(0, 800) + '...';
+      } else {
+        processedContent = item.content || '';
+      }
+
+      return {
+        id: item.id || `keyword_result_${index}`,
+        title: item.title || '',
+        content: processedContent,
+        filename: item.filename || '',
+        category: item.category || '',
+        relevance: item['@search.score'] || 0
+      };
+    });
+
+    res.json({ results });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+```
 
 ## 📚 기술 스택
 
@@ -348,7 +485,7 @@ networks:
 | 배포 | Docker, Docker Compose, Azure Web App |
 
 ## ⚠️ 향후 개선 방안 + 확장성
-
+- 벡터 검색 적용
 - 코드 업로드시 암호화
 - 코드 유형 분류 학습
 - 회사 코드의 외부 AI 서비스 전송에 대한 정책 수립(Azure private, EntraID 인증 등)
