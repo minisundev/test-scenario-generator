@@ -84,8 +84,7 @@
 ---
 
 ## 🏗️ 서비스 아키텍처
-
-![image.png](attachment:66bad163-fdf9-49b7-9904-ee94fc017005:image.png)
+![image](/sample/image.png)
 
 - **비용을 최소화하기 위해 Blob storage를 붙이지 않고 사용**
 - **DB를 사용하지 않고 Azure AI Search 인덱스를 직접 사용**함으로써 운영 비용을 절감하고 구성 간결화
