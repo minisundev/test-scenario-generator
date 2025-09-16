@@ -140,7 +140,10 @@
 - 프록시 서버:
     
     👉 [https://dopaminesun-server-dycxgacfcmbcc2ec.eastus2-01.azurewebsites.net](https://dopaminesun-server-dycxgacfcmbcc2ec.eastus2-01.azurewebsites.net/)
+
+- 데모 영상:
     
+    👉 [영상 보기](https://youtu.be/h4vd4OJN7F4)
 
 ---
 
